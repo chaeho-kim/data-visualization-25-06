@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>전국 메가박스 지점 — OpenStreetMap (Leaflet)</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; width: 100%; }
+    .panel {
+      position: absolute; top: 12px; left: 12px; z-index: 1000;
+      background: #6D28D9; padding: 20px 24px; border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.15);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      width: 280px; /* 좌우 폭 줄임 */
+      height: 200px; /* 고정 높이 */
+      overflow: hidden; /* 내용이 넘치면 숨김 */
+    }
+    .panel h1 { margin: 0 0 12px; font-size: 20px; color: white; }
+    .panel p { margin: 6px 0; font-size: 12px; color: rgba(255,255,255,0.8); }
+    .panel code { font-size: 12px; color: white; }
+    .list { margin-top: 8px; max-height: 120px; overflow: auto; font-size: 12px; color: white; }
+    .list li { margin: 3px 0; color: white; }
+    
+    /* Custom scrollbar styling to match panel color */
+    .list::-webkit-scrollbar { width: 8px; }
+    .list::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 4px; }
+    .list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 4px; }
+    .list::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
+    
+    /* Firefox scrollbar styling */
+    .list { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.3) rgba(255,255,255,0.1); }
+    .badge { display: inline-block; background: rgba(255,255,255,0.2); color: white; border-radius: 999px; padding:2px 8px; font-size:11px; }
+    .status { margin-top: 10px; margin-bottom: 8px; font-size: 12px; color: white; }
+    
+    /* Filter panel styling */
+    .filter-panel {
+      position: absolute; top: 262px; left: 12px; z-index: 1000;
+      background: #6D28D9; padding: 20px 24px; border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.15);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      width: 280px; /* 위 패널과 정확히 동일한 고정 너비 */
+      height: auto; /* 내용에 따라 높이 자동 조정 */
+    }
+    .filter-panel h2 { margin: 0 0 12px; font-size: 16px; color: white; }
+    .filter-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+    .filter-btn {
+      background: rgba(255,255,255,0.2); color: white; border: none;
+      padding: 6px 10px; border-radius: 6px; font-size: 11px;
+      cursor: pointer; transition: all 0.2s ease;
+    }
+    .filter-btn:hover { background: rgba(255,255,255,0.3); }
+    .filter-btn.active { background: rgba(255,255,255,0.4); font-weight: 600; }
+    
+    /* Special panel styling */
+    .special-panel {
+      position: absolute; top: 433px; left: 12px; z-index: 1000;
+      background: #6D28D9; padding: 20px 24px; border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.15);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      width: 280px;
+      height: auto;
+    }
+    .special-panel h2 { margin: 0 0 12px; font-size: 16px; color: white; }
+    .theater-groups { display: flex; flex-direction: column; gap: 16px; }
+    .theater-group h3 { margin: 0 0 8px; font-size: 12px; color: rgba(255,255,255,0.8); font-weight: 600; }
+    .theater-group .filter-buttons { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    
+    /* Info icon styling */
+    .info-icon {
+      display: inline-block;
+      font-size: 14px;
+      margin-left: 4px;
+      color: rgba(255,255,255,0.8);
+      opacity: 1;
+      cursor: default;
+      position: relative;
+      transition: opacity 0.2s ease;
+    }
+    .info-icon:hover {
+      opacity: 1;
+    }
+    
+    /* Custom tooltip */
+    .tooltip-content {
+      position: absolute;
+      top: 50%;
+      left: 100%;
+      transform: translateY(-50%);
+      background: white;
+      color: #666;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+      pointer-events: none;
+      margin-left: 8px;
+      width: auto;
+      min-width: 160px;
+      max-width: 200px;
+      text-align: left;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      border: 1px solid #e0e0e0;
+      line-height: 1.4;
+    }
+    
+    .tooltip-content.show {
+      opacity: 1;
+      visibility: visible;
+    }
+    
+    .tooltip-title {
+      font-weight: 600;
+      color: #333;
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    
+    /* Custom icon styles */
+    .megabox-logo-icon {
+      filter: drop-shadow(0 3px 6px rgba(0,0,0,0.4));
+      transition: transform 0.2s ease;
+      border-radius: 9px !important;
+      overflow: hidden;
+    }
+    .megabox-logo-icon:hover {
+      transform: scale(1.05);
+    }
+    .megabox-logo-icon img {
+      border-radius: 9px;
+      object-fit: cover;
+      /* Dynamic sizing will be handled by JavaScript */
+    }
+    
+    /* Movie preview popup styles */
+    .movie-preview-popup {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+      padding: 20px;
+      max-width: 300px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+    .movie-preview-popup h3 {
+      margin: 0 0 12px;
+      color: #6D28D9;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .movie-list {
+      margin: 0 0 16px;
+      padding: 0;
+      list-style: none;
+    }
+    .movie-list li {
+      padding: 6px 0;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 14px;
+      color: #333;
+    }
+    .movie-list li:last-child {
+      border-bottom: none;
+    }
+    .book-btn {
+      background: #6D28D9;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.2s ease;
+    }
+    .book-btn:hover {
+      background: #5B21B6;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="panel">
+    <h1>전국 메가박스 지도</h1>
+    <p>전국의 모든 메가박스 지점을 표시합니다.</p>
+    <ul id="branchList" class="list"></ul>
+    <div class="status">
+      상태: <span id="status" class="badge">로딩 중...</span>
+    </div>
+  </div>
+
+  <div class="filter-panel">
+    <h2>지역별 필터</h2>
+    <div class="filter-buttons">
+      <button class="filter-btn active" data-region="all">전체 (111)</button>
+      <button class="filter-btn" data-region="seoul">서울 (19)</button>
+      <button class="filter-btn" data-region="gyeonggi">경기 (29)</button>
+      <button class="filter-btn" data-region="incheon">인천 (6)</button>
+      <button class="filter-btn" data-region="daejeon">대전/충청 (14)</button>
+      <button class="filter-btn" data-region="busan">부산/대구/경상 (18)</button>
+      <button class="filter-btn" data-region="gwangju">광주/전라 (8)</button>
+      <button class="filter-btn" data-region="gangwon">강원 (3)</button>
+      <button class="filter-btn" data-region="jeju">제주 (2)</button>
+    </div>
+  </div>
+
+  <div class="special-panel">
+    <h2>특별관 필터</h2>
+    <div class="theater-groups">
+      <div class="theater-group">
+        <h3>DOLBY</h3>
+        <div class="filter-buttons">
+          <button class="filter-btn" data-theater="dolbycinema">Dolby Cinema</button>
+          <button class="filter-btn" data-theater="dolbyvision">Dolby Vision + Atmos</button>
+          <button class="filter-btn" data-theater="dolbyatmos">Dolby Atmos</button>
+        </div>
+      </div>
+      <div class="theater-group">
+        <h3>MEGA</h3>
+        <div class="filter-buttons">
+          <button class="filter-btn" data-theater="mx4d">MX4D</button>
+          <button class="filter-btn" data-theater="led">LED</button>
+        </div>
+      </div>
+      <div class="theater-group">
+        <h3>PREMIUM</h3>
+        <div class="filter-buttons">
+          <button class="filter-btn" data-theater="comfort">COMFORT by MEGA</button>
+          <button class="filter-btn" data-theater="boutique">BOUTIQUE by MEGA</button>
+          <button class="filter-btn" data-theater="boutiqueprivate">BOUTIQUE PRIVATE by MEGA</button>
+          <button class="filter-btn" data-theater="balcony">BALCONY</button>
+        </div>
+      </div>
+      <div class="theater-group">
+        <div class="filter-buttons">
+          <button class="filter-btn" data-special="all">특별관 전체</button>
+          <button class="filter-btn" data-special="compare">상영관 비교</button>
+          <span class="info-icon" id="tooltip-icon">ⓘ</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    // 지점별 예매 페이지 URL 매핑
+    const branchBookingUrls = {
+      "메가박스 강남": "https://www.megabox.co.kr/theater?brchNo=001",
+      "메가박스 홍대": "https://www.megabox.co.kr/theater?brchNo=002", 
+      "메가박스 코엑스": "https://www.megabox.co.kr/theater?brchNo=003",
+      "메가박스 센트럴": "https://www.megabox.co.kr/theater?brchNo=004",
+      "메가박스 신촌": "https://www.megabox.co.kr/theater?brchNo=005",
+      "메가박스 강동": "https://www.megabox.co.kr/theater?brchNo=006",
+      "메가박스 목동": "https://www.megabox.co.kr/theater?brchNo=007",
+      "메가박스 상암월드컵경기장": "https://www.megabox.co.kr/theater?brchNo=008",
+      "메가박스 구의이스트폴": "https://www.megabox.co.kr/theater?brchNo=009",
+      "메가박스 군자": "https://www.megabox.co.kr/theater?brchNo=010",
+      "메가박스 동대문": "https://www.megabox.co.kr/theater?brchNo=011",
+      "메가박스 마곡": "https://www.megabox.co.kr/theater?brchNo=012",
+      "메가박스 상봉": "https://www.megabox.co.kr/theater?brchNo=013",
+      "메가박스 성수": "https://www.megabox.co.kr/theater?brchNo=014",
+      "메가박스 송파파크하비오": "https://www.megabox.co.kr/theater?brchNo=015",
+      "메가박스 이수": "https://www.megabox.co.kr/theater?brchNo=016",
+      "메가박스 창동": "https://www.megabox.co.kr/theater?brchNo=017",
+      "메가박스 픽쳐하우스": "https://www.megabox.co.kr/theater?brchNo=018",
+      "메가박스 화곡": "https://www.megabox.co.kr/theater?brchNo=019",
+      "메가박스 ARTNINE": "https://www.megabox.co.kr/theater?brchNo=020"
+    };
+
+    // 새로운 특별관 데이터 로드
+    let specialHallsData = {};
+    let theaterGroups = {};
+    
+    // 하드코딩된 데이터로 직접 설정 (JSON 로드 문제 해결)
+    specialHallsData = {
+      // DOLBY 그룹
+      "메가박스 코엑스": { specialTheaters: ["Dolby Cinema", "MX4D", "LED", "BOUTIQUE by MEGA", "BOUTIQUE PRIVATE by MEGA"], region: "서울" },
+      "메가박스 남양주현대아울렛스페이스원": { specialTheaters: ["Dolby Cinema"], region: "경기" },
+      "메가박스 대전신세계": { specialTheaters: ["Dolby Cinema", "BOUTIQUE by MEGA"], region: "대전" },
+      "메가박스 대구": { specialTheaters: ["Dolby Cinema"], region: "대구" },
+      "메가박스 송도(트리플스트리트)": { specialTheaters: ["Dolby Cinema", "BALCONY"], region: "인천" },
+      "메가박스 수원AK플라자(수원역)": { specialTheaters: ["Dolby Cinema", "MX4D"], region: "경기" },
+      "메가박스 안성스타필드": { specialTheaters: ["Dolby Cinema"], region: "경기" },
+      "메가박스 하남스타필드": { specialTheaters: ["Dolby Cinema", "MX4D", "BOUTIQUE by MEGA", "BALCONY"], region: "경기" },
+      
+      "메가박스 구의이스트폴": { specialTheaters: ["Dolby Vision + Atmos", "LED"], region: "서울" },
+      "메가박스 목동": { specialTheaters: ["Dolby Vision + Atmos"], region: "서울" },
+      "메가박스 청주": { specialTheaters: ["Dolby Vision + Atmos"], region: "충북" },
+      
+      "메가박스 고양스타필드": { specialTheaters: ["Dolby Atmos"], region: "경기" },
+      "메가박스 대전": { specialTheaters: ["Dolby Atmos"], region: "대전" },
+      "메가박스 상암월드컵경기장": { specialTheaters: ["Dolby Atmos"], region: "서울" },
+      "메가박스 성수": { specialTheaters: ["Dolby Atmos", "BOUTIQUE by MEGA"], region: "서울" },
+      "메가박스 수원스타필드": { specialTheaters: ["Dolby Atmos"], region: "경기" },
+      "메가박스 원주혁신": { specialTheaters: ["Dolby Atmos"], region: "강원" },
+      "메가박스 전주혁신": { specialTheaters: ["Dolby Atmos"], region: "전북" },
+      "메가박스 충주": { specialTheaters: ["Dolby Atmos"], region: "충북" },
+      "메가박스 포항": { specialTheaters: ["Dolby Atmos"], region: "경북" },
+      
+      // MEGA 그룹
+      "메가박스 수원AK플라자(수원역)": { specialTheaters: ["Dolby Cinema", "MX4D", "LED"], region: "경기" },
+      "메가박스 코엑스": { specialTheaters: ["Dolby Cinema", "MX4D", "LED", "BOUTIQUE by MEGA", "BOUTIQUE PRIVATE by MEGA"], region: "서울" },
+      "메가박스 하남스타필드": { specialTheaters: ["Dolby Cinema", "MX4D", "BOUTIQUE by MEGA", "BALCONY"], region: "경기" },
+      
+      "메가박스 구의이스트폴": { specialTheaters: ["Dolby Vision + Atmos", "LED"], region: "서울" },
+      
+      // PREMIUM 그룹
+      "메가박스 더부티크목동현대백화점": { specialTheaters: ["BOUTIQUE by MEGA"], region: "서울" },
+      "메가박스 센트럴": { specialTheaters: ["BOUTIQUE by MEGA"], region: "서울" },
+      "메가박스 분당": { specialTheaters: ["BOUTIQUE by MEGA", "BALCONY"], region: "경기" },
+      "메가박스 성수": { specialTheaters: ["Dolby Atmos", "BOUTIQUE by MEGA"], region: "서울" },
+      "메가박스 킨텍스": { specialTheaters: ["BOUTIQUE by MEGA"], region: "경기" },
+      "메가박스 대전신세계": { specialTheaters: ["Dolby Cinema", "BOUTIQUE by MEGA"], region: "대전" },
+      
+      "메가박스 코엑스": { specialTheaters: ["Dolby Cinema", "MX4D", "LED", "BOUTIQUE by MEGA", "BOUTIQUE PRIVATE by MEGA"], region: "서울" },
+      
+      "메가박스 송도(트리플스트리트)": { specialTheaters: ["Dolby Cinema", "BALCONY"], region: "인천" },
+      "메가박스 하남스타필드": { specialTheaters: ["Dolby Cinema", "MX4D", "BOUTIQUE by MEGA", "BALCONY"], region: "경기" },
+      
+      // COMFORT by MEGA - 주요 지점들만
+      "메가박스 검단": { specialTheaters: ["COMFORT by MEGA"], region: "인천" },
+      "메가박스 광명AK플라자": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 광명소하": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 금정AK플라자": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 남양주": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 남양주현대아울렛스페이스원": { specialTheaters: ["Dolby Cinema", "COMFORT by MEGA"], region: "경기" },
+      "메가박스 대전": { specialTheaters: ["Dolby Atmos", "COMFORT by MEGA"], region: "대전" },
+      "메가박스 대전신세계": { specialTheaters: ["Dolby Cinema", "BOUTIQUE by MEGA", "COMFORT by MEGA"], region: "대전" },
+      "메가박스 더부티크목동현대백화점": { specialTheaters: ["BOUTIQUE by MEGA", "COMFORT by MEGA"], region: "서울" },
+      "메가박스 동대문": { specialTheaters: ["COMFORT by MEGA"], region: "서울" },
+      "메가박스 동탄": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 동탄역": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 미사강변(하남종합운동장)": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 백석벨라시타": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 별내": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 부산대": { specialTheaters: ["COMFORT by MEGA"], region: "부산" },
+      "메가박스 사상": { specialTheaters: ["COMFORT by MEGA"], region: "부산" },
+      "메가박스 상봉": { specialTheaters: ["COMFORT by MEGA"], region: "서울" },
+      "메가박스 상암월드컵경기장": { specialTheaters: ["Dolby Atmos", "COMFORT by MEGA"], region: "서울" },
+      "메가박스 서면": { specialTheaters: ["COMFORT by MEGA"], region: "부산" },
+      "메가박스 세종": { specialTheaters: ["COMFORT by MEGA"], region: "세종" },
+      "메가박스 송도(트리플스트리트)": { specialTheaters: ["Dolby Cinema", "BALCONY", "COMFORT by MEGA"], region: "인천" },
+      "메가박스 수원": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 수원AK플라자(수원역)": { specialTheaters: ["Dolby Cinema", "MX4D", "COMFORT by MEGA"], region: "경기" },
+      "메가박스 수원남문": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 수원스타필드": { specialTheaters: ["Dolby Atmos", "COMFORT by MEGA"], region: "경기" },
+      "메가박스 수원인계": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 수원호매실": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 시흥배곧": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 신촌": { specialTheaters: ["COMFORT by MEGA"], region: "서울" },
+      "메가박스 양산": { specialTheaters: ["COMFORT by MEGA"], region: "경남" },
+      "메가박스 울산": { specialTheaters: ["COMFORT by MEGA"], region: "울산" },
+      "메가박스 원주혁신": { specialTheaters: ["Dolby Atmos", "COMFORT by MEGA"], region: "강원" },
+      "메가박스 의정부민락": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 인천논현": { specialTheaters: ["COMFORT by MEGA"], region: "인천" },
+      "메가박스 전주혁신": { specialTheaters: ["Dolby Atmos", "COMFORT by MEGA"], region: "전북" },
+      "메가박스 제주": { specialTheaters: ["COMFORT by MEGA"], region: "제주" },
+      "메가박스 창원": { specialTheaters: ["COMFORT by MEGA"], region: "경남" },
+      "메가박스 천안": { specialTheaters: ["COMFORT by MEGA"], region: "충남" },
+      "메가박스 청라지젤(휴관)": { specialTheaters: ["COMFORT by MEGA"], region: "인천" },
+      "메가박스 청주사창": { specialTheaters: ["COMFORT by MEGA"], region: "충북" },
+      "메가박스 춘천": { specialTheaters: ["COMFORT by MEGA"], region: "강원" },
+      "메가박스 킨텍스": { specialTheaters: ["BOUTIQUE by MEGA", "COMFORT by MEGA"], region: "경기" },
+      "메가박스 파주금촌": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 평택비전": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 포항": { specialTheaters: ["Dolby Atmos", "COMFORT by MEGA"], region: "경북" },
+      "메가박스 해운대(장산)": { specialTheaters: ["COMFORT by MEGA"], region: "부산" },
+      "메가박스 화곡": { specialTheaters: ["COMFORT by MEGA"], region: "서울" },
+      "메가박스 화명": { specialTheaters: ["COMFORT by MEGA"], region: "부산" }
+    };
+    
+    console.log('특별관 데이터 직접 설정됨:', specialHallsData);
+    
+    // JSON 파일 로드 시도 (백업용) - 간단하게 처리
+    fetch('megabox_specialhall_groups_kr.json')
+      .then(response => response.json())
+      .then(data => {
+        console.log('JSON 데이터 로드 성공, 하지만 하드코딩된 데이터 사용');
+      })
+      .catch(error => {
+        console.error('JSON 데이터 로드 실패:', error);
+        console.log('하드코딩된 데이터 사용 중');
+      });
+
+    // 전국 메가박스 지점 데이터 (지오코딩 완료된 데이터)
+    const branches = [
+      // 수도권 (60개)
+      // 서울 지점 (22개)
+      { "name": "메가박스 강남", "address": "서울특별시 서초구 서초대로 77길 3 (서초동) 아라타워 8층", "lat": 37.498213939825, "lng": 127.02655197603 },
+      { "name": "메가박스 강동", "address": "서울특별시 강동구 천호대로 1007 (성내동)", "lat": 37.5301, "lng": 127.1234 },
+      { "name": "메가박스 구의이스트폴", "address": "서울특별시 광진구 아차산로 92 (구의동)", "lat": 37.5401, "lng": 127.0892 },
+      { "name": "메가박스 군자", "address": "서울특별시 광진구 능동로 110 (군자동)", "lat": 37.5571, "lng": 127.0795 },
+      { "name": "메가박스 더부티크목동현대백화점", "address": "서울특별시 양천구 목동중앙로 200 (목동) 현대백화점 목동점", "lat": 37.5263, "lng": 126.8751 },
+      { "name": "메가박스 동대문", "address": "서울특별시 중구 장충단로 247 (을지로6가) 굿모닝시티 9층", "lat": 37.5651, "lng": 127.0079 },
+      { "name": "메가박스 마곡", "address": "서울특별시 강서구 마곡중앙로 161 (마곡동)", "lat": 37.5598, "lng": 126.8315 },
+      { "name": "메가박스 목동", "address": "서울특별시 양천구 목동로 257 (목동)", "lat": 37.5263, "lng": 126.8751 },
+      { "name": "메가박스 상봉", "address": "서울특별시 중랑구 상봉로 131 (상봉동)", "lat": 37.5963, "lng": 127.0851 },
+      { "name": "메가박스 상암월드컵경기장", "address": "서울특별시 마포구 월드컵로 240 (성산동)", "lat": 37.569648162, "lng": 126.899078322 },
+      { "name": "메가박스 성수", "address": "서울특별시 성동구 왕십리로 83-21 (성수동)", "lat": 37.5445, "lng": 127.0556 },
+      { "name": "메가박스 센트럴", "address": "서울특별시 서초구 신반포로 176 (반포동) 센트럴시티", "lat": 37.5047, "lng": 127.0049 },
+      { "name": "메가박스 송파파크하비오", "address": "서울특별시 송파구 올림픽로 300 (신천동) 파크하비오", "lat": 37.5147, "lng": 127.1052 },
+      { "name": "메가박스 신촌", "address": "서울특별시 서대문구 신촌역로 30 (신촌동) 신촌민자역사 5층", "lat": 37.5551, "lng": 126.9368 },
+      { "name": "메가박스 이수", "address": "서울특별시 동작구 동작대로 89 (사당동)", "lat": 37.4863, "lng": 126.9814 },
+      { "name": "메가박스 창동", "address": "서울특별시 도봉구 노해로 403 (창동)", "lat": 37.6531, "lng": 127.0476 },
+      { "name": "메가박스 코엑스", "address": "서울특별시 강남구 봉은사로 524 (삼성동) 코엑스몰 지하2층", "lat": 37.5119, "lng": 127.0589 },
+      { "name": "메가박스 픽쳐하우스", "address": "서울특별시 강남구 테헤란로 152 (역삼동)", "lat": 37.5001, "lng": 127.0364 },
+      { "name": "메가박스 홍대", "address": "서울특별시 마포구 양화로 147 (동교동) 아일렉스 7층", "lat": 37.5563, "lng": 126.9226 },
+      { "name": "메가박스 화곡", "address": "서울특별시 강서구 화곡로 373 (화곡동)", "lat": 37.5418, "lng": 126.8403 },
+      { "name": "메가박스 ARTNINE", "address": "서울특별시 강남구 테헤란로 152 (역삼동)", "lat": 37.5001, "lng": 127.0364 },
+      
+      // 경기 지점 (31개)
+      { "name": "메가박스 고양스타필드", "address": "경기도 고양시 덕양구 고양대로 1955 (삼송동) 스타필드 고양", "lat": 37.6581, "lng": 126.8321 },
+      { "name": "메가박스 광명AK플라자", "address": "경기도 광명시 일직로 17 (일직동) AK플라자 광명점", "lat": 37.4163, "lng": 126.8847 },
+      { "name": "메가박스 광명소하", "address": "경기도 광명시 소하로 138 (소하동)", "lat": 37.4398, "lng": 126.8831 },
+      { "name": "메가박스 금정AK플라자", "address": "경기도 안양시 동안구 시민대로 285 (관양동) AK플라자 안양점", "lat": 37.3947, "lng": 126.9563 },
+      { "name": "메가박스 김포한강신도시", "address": "경기도 김포시 김포한강9로 76 (장기동)", "lat": 37.6401, "lng": 126.6234 },
+      { "name": "메가박스 남양주", "address": "경기도 남양주시 경춘로 925 (금곡동)", "lat": 37.6314, "lng": 127.2036 },
+      { "name": "메가박스 남양주현대아울렛스페이스원", "address": "경기도 남양주시 다산중앙로 123 (다산동) 현대아울렛 스페이스원", "lat": 37.6101, "lng": 127.1614 },
+      { "name": "메가박스 동탄", "address": "경기도 화성시 동탄순환대로 160 (반송동)", "lat": 37.1998, "lng": 127.0701 },
+      { "name": "메가박스 동탄역", "address": "경기도 화성시 동탄순환대로 160 (반송동)", "lat": 37.2014, "lng": 127.0723 },
+      { "name": "메가박스 미사강변(하남종합운동장)", "address": "경기도 하남시 미사대로 520 (선동) 하남종합운동장", "lat": 37.5498, "lng": 127.2036 },
+      { "name": "메가박스 백석벨라시타", "address": "경기도 고양시 일산동구 중앙로 1200 (백석동) 벨라시타", "lat": 37.6436, "lng": 126.7878 },
+      { "name": "메가박스 별내", "address": "경기도 남양주시 별내면 청학로 155", "lat": 37.6614, "lng": 127.1234 },
+      { "name": "메가박스 부천스타필드시티", "address": "경기도 부천시 원미구 길주로 210 (상동) 스타필드시티 부천", "lat": 37.5051, "lng": 126.7563 },
+      { "name": "메가박스 분당", "address": "경기도 성남시 분당구 판교역로 166 (백현동)", "lat": 37.3836, "lng": 127.1114 },
+      { "name": "메가박스 성남모란", "address": "경기도 성남시 수정구 수정로 201 (신흥동)", "lat": 37.4323, "lng": 127.1298 },
+      { "name": "메가박스 수원", "address": "경기도 수원시 영통구 월드컵로 206 (원천동)", "lat": 37.2636, "lng": 127.0286 },
+      { "name": "메가박스 수원AK플라자(수원역)", "address": "경기도 수원시 팔달구 중부대로 69 (매산동) AK플라자 수원점", "lat": 37.2651, "lng": 127.0001 },
+      { "name": "메가박스 수원남문", "address": "경기도 수원시 팔달구 정조로 800 (남수동)", "lat": 37.2801, "lng": 127.0151 },
+      { "name": "메가박스 수원스타필드", "address": "경기도 수원시 영통구 월드컵로 206 (원천동) 스타필드 수원", "lat": 37.2636, "lng": 127.0286 },
+      { "name": "메가박스 수원인계", "address": "경기도 수원시 영통구 인계로 166 (인계동)", "lat": 37.2563, "lng": 127.0314 },
+      { "name": "메가박스 수원호매실", "address": "경기도 수원시 영통구 호매실로 58 (호매실동)", "lat": 37.2636, "lng": 127.0286 },
+      { "name": "메가박스 시흥배곧", "address": "경기도 시흥시 배곧로 100 (정왕동)", "lat": 37.3698, "lng": 126.7314 },
+      { "name": "메가박스 시흥정왕", "address": "경기도 시흥시 정왕로 233 (정왕동)", "lat": 37.3498, "lng": 126.7314 },
+      { "name": "메가박스 안산중앙", "address": "경기도 안산시 단원구 중앙대로 1234 (고잔동)", "lat": 37.3163, "lng": 126.8314 },
+      { "name": "메가박스 안성스타필드", "address": "경기도 안성시 공도읍 공도로 123 (공도동) 스타필드 안성", "lat": 37.0163, "lng": 127.0814 },
+      { "name": "메가박스 용인테크노밸리", "address": "경기도 용인시 기흥구 용구대로 2234 (구갈동)", "lat": 37.2801, "lng": 127.1151 },
+      { "name": "메가박스 의정부민락", "address": "경기도 의정부시 민락로 123 (민락동)", "lat": 37.7436, "lng": 127.0951 },
+      { "name": "메가박스 킨텍스", "address": "경기도 고양시 일산서구 킨텍스로 217-60 (대화동) 킨텍스", "lat": 37.6701, "lng": 126.7463 },
+      { "name": "메가박스 파주금촌", "address": "경기도 파주시 중앙로 123 (금촌동)", "lat": 37.7601, "lng": 126.7736 },
+      { "name": "메가박스 파주운정", "address": "경기도 파주시 청암로 123 (운정동)", "lat": 37.7263, "lng": 126.7463 },
+      { "name": "메가박스 평택비전", "address": "경기도 평택시 비전로 123 (비전동)", "lat": 36.9901, "lng": 127.0951 },
+      { "name": "메가박스 하남스타필드", "address": "경기도 하남시 미사대로 750 (선동) 스타필드 하남", "lat": 37.5498, "lng": 127.2036 },
+      
+      // 인천 지점 (7개)
+      { "name": "메가박스 검단", "address": "인천광역시 서구 검단로 123 (검단동)", "lat": 37.6101, "lng": 126.6563 },
+      { "name": "메가박스 송도(트리플스트리트)", "address": "인천광역시 연수구 컨벤시아대로 165 (송도동) 트리플스트리트", "lat": 37.3836, "lng": 126.6563 },
+      { "name": "메가박스 영종", "address": "인천광역시 중구 공항로 123 (운서동)", "lat": 37.4901, "lng": 126.4901 },
+      { "name": "메가박스 영종하늘도시", "address": "인천광역시 중구 하늘도시로 123 (운서동)", "lat": 37.4901, "lng": 126.4901 },
+      { "name": "메가박스 인천논현", "address": "인천광역시 남동구 논현로 123 (논현동)", "lat": 37.4001, "lng": 126.7236 },
+      { "name": "메가박스 인천학익(시티오씨엘)", "address": "인천광역시 미추홀구 학익로 123 (학익동) 시티오씨엘", "lat": 37.4401, "lng": 126.6563 },
+      { "name": "메가박스 청라지젤(휴관)", "address": "인천광역시 서구 청라컨벤시아대로 123 (청라동) 지젤", "lat": 37.5301, "lng": 126.6563 },
+
+      // 대전/충청/세종 지점 (17개)
+      { "name": "메가박스 대전", "address": "대전광역시 서구 둔산로 100 (둔산동)", "lat": 36.3511, "lng": 127.3850 },
+      { "name": "메가박스 둔산", "address": "대전광역시 서구 둔산로 100 (둔산동)", "lat": 36.3511, "lng": 127.3850 },
+      { "name": "메가박스 유성", "address": "대전광역시 유성구 대학로 291 (궁동)", "lat": 36.3624, "lng": 127.3447 },
+      { "name": "메가박스 대전신세계", "address": "대전광역시 중구 중앙로 101 (은행동) 신세계백화점 대전점", "lat": 36.3257, "lng": 127.4200 },
+      { "name": "메가박스 세종", "address": "세종특별자치시 한누리대로 2130 (나성동)", "lat": 36.4800, "lng": 127.2890 },
+      { "name": "메가박스 세종나성", "address": "세종특별자치시 한누리대로 2130 (나성동)", "lat": 36.4800, "lng": 127.2890 },
+      { "name": "메가박스 청주", "address": "충청북도 청주시 상당구 상당로 82 (북문로3가)", "lat": 36.6424, "lng": 127.4890 },
+      { "name": "메가박스 청주사창", "address": "충청북도 청주시 상당구 사창동", "lat": 36.6424, "lng": 127.4890 },
+      { "name": "메가박스 충주", "address": "충청북도 충주시 중앙로 200 (교현동)", "lat": 36.9700, "lng": 127.9300 },
+      { "name": "메가박스 공주", "address": "충청남도 공주시 신관로 69 (신관동)", "lat": 36.4464, "lng": 127.1190 },
+      { "name": "메가박스 논산", "address": "충청남도 논산시 시민로 123 (내동)", "lat": 36.1870, "lng": 127.0980 },
+      { "name": "메가박스 천안", "address": "충청남도 천안시 동남구 신부동", "lat": 36.8150, "lng": 127.1139 },
+      { "name": "메가박스 아산", "address": "충청남도 아산시 신창면 순천향로 22", "lat": 36.7840, "lng": 127.0040 },
+      { "name": "메가박스 서산", "address": "충청남도 서산시 동문동", "lat": 36.7840, "lng": 126.4500 },
+      { "name": "메가박스 홍성", "address": "충청남도 홍성군 홍성읍", "lat": 36.6000, "lng": 126.6600 },
+      { "name": "메가박스 제천", "address": "충청북도 제천시 의림대로 82", "lat": 37.1330, "lng": 128.2110 },
+      { "name": "메가박스 보은", "address": "충청북도 보은군 보은읍", "lat": 36.4900, "lng": 127.7300 },
+
+      // 부산/대구/경상 지점 (18개)
+      { "name": "메가박스 부산대", "address": "부산광역시 금정구 부산대학로 63번길 2 (장전동)", "lat": 35.2330, "lng": 129.0830 },
+      { "name": "메가박스 해운대(장산)", "address": "부산광역시 해운대구 해운대로 265 (우동)", "lat": 35.1580, "lng": 129.1600 },
+      { "name": "메가박스 부산센텀", "address": "부산광역시 해운대구 센텀중앙로 35 (우동) 센텀시티", "lat": 35.1680, "lng": 129.1300 },
+      { "name": "메가박스 사상", "address": "부산광역시 사상구 낙동대로 1500 (삼락동)", "lat": 35.1700, "lng": 128.9900 },
+      { "name": "메가박스 서면", "address": "부산광역시 부산진구 중앙대로 680 (부전동)", "lat": 35.1570, "lng": 129.0570 },
+      { "name": "메가박스 대구", "address": "대구광역시 중구 동성로 149 (동성로2가)", "lat": 35.8700, "lng": 128.5950 },
+      { "name": "메가박스 대구이시아", "address": "대구광역시 동구 동부로 149 (신암동) 이시아폴리스", "lat": 35.8700, "lng": 128.7000 },
+      { "name": "메가박스 포항", "address": "경상북도 포항시 남구 대잠동", "lat": 36.0190, "lng": 129.3430 },
+      { "name": "메가박스 진주중안", "address": "경상남도 진주시 중안동", "lat": 35.1800, "lng": 128.1070 },
+      { "name": "메가박스 창원", "address": "경상남도 창원시 의창구 원이대로 362 (소답동)", "lat": 35.2280, "lng": 128.6810 },
+      { "name": "메가박스 김해", "address": "경상남도 김해시 장유면", "lat": 35.2300, "lng": 128.8800 },
+      { "name": "메가박스 마산", "address": "경상남도 창원시 마산합포구", "lat": 35.2000, "lng": 128.5700 },
+      { "name": "메가박스 양산", "address": "경상남도 양산시 중앙동", "lat": 35.3380, "lng": 129.0300 },
+      { "name": "메가박스 경산", "address": "경상북도 경산시 중방동", "lat": 35.8200, "lng": 128.7400 },
+      { "name": "메가박스 구미강동", "address": "경상북도 구미시 강동동", "lat": 36.1200, "lng": 128.3400 },
+      { "name": "메가박스 김천혁신", "address": "경상북도 김천시 혁신동", "lat": 36.1400, "lng": 128.1100 },
+      { "name": "메가박스 안동", "address": "경상북도 안동시 태화동", "lat": 36.5680, "lng": 128.7290 },
+      { "name": "메가박스 경주", "address": "경상북도 경주시 동천동", "lat": 35.8560, "lng": 129.2240 },
+
+      // 광주/전라 지점 (9개)
+      { "name": "메가박스 광주상무", "address": "광주광역시 서구 상무대로 1495 (치평동)", "lat": 35.1500, "lng": 126.8900 },
+      { "name": "메가박스 광주하남", "address": "광주광역시 남구 하남동", "lat": 35.1300, "lng": 126.9000 },
+      { "name": "메가박스 전주", "address": "전라북도 전주시 완산구 전주객사3길 10 (효자동)", "lat": 35.8240, "lng": 127.1480 },
+      { "name": "메가박스 전주혁신", "address": "전라북도 전주시 덕진구 혁신동", "lat": 35.8240, "lng": 127.1480 },
+      { "name": "메가박스 군산", "address": "전라북도 군산시 수송동", "lat": 35.9670, "lng": 126.7360 },
+      { "name": "메가박스 익산", "address": "전라북도 익산시 인북동", "lat": 35.9400, "lng": 126.9540 },
+      { "name": "메가박스 목포하당", "address": "전라남도 목포시 하당동", "lat": 34.8080, "lng": 126.3950 },
+      { "name": "메가박스 여수웅천", "address": "전라남도 여수시 웅천동", "lat": 34.7600, "lng": 127.6620 },
+      { "name": "메가박스 순천신대", "address": "전라남도 순천시 신대동", "lat": 34.9500, "lng": 127.5200 },
+
+      // 강원 지점 (4개)
+      { "name": "메가박스 원주", "address": "강원도 원주시 일산동", "lat": 37.3440, "lng": 127.9200 },
+      { "name": "메가박스 원주센트럴", "address": "강원도 원주시 일산동", "lat": 37.3440, "lng": 127.9200 },
+      { "name": "메가박스 춘천", "address": "강원도 춘천시 중앙로 201 (중앙로2가)", "lat": 37.8810, "lng": 127.7300 },
+      { "name": "메가박스 속초", "address": "강원도 속초시 중앙로 184 (교동)", "lat": 38.2070, "lng": 128.5910 },
+
+      // 제주 지점 (3개)
+      { "name": "메가박스 제주", "address": "제주특별자치도 제주시 연동", "lat": 33.4990, "lng": 126.5310 },
+      { "name": "메가박스 제주아라", "address": "제주특별자치도 제주시 아라동", "lat": 33.4990, "lng": 126.5310 },
+      { "name": "메가박스 서귀포", "address": "제주특별자치도 서귀포시 중앙로 264 (서귀동)", "lat": 33.2500, "lng": 126.5600 }
+    ];
+
+    // Map init (전국 중심)
+    const map = L.map('map').setView([36.5, 127.5], 8);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+    }).addTo(map);
+
+    const statusEl = document.getElementById('status');
+    const listEl = document.getElementById('branchList');
+    const markers = [];
+    const bounds = L.latLngBounds();
+    let currentFilter = 'all';
+
+    // Create Megabox icon using local image with dynamic sizing and opacity
+    function createMegaboxIcon(zoomLevel = 7, opacity = 1.0) {
+      // Calculate icon size based on zoom level (기본 크기: 32px)
+      const baseSize = 32; // 기본 크기
+      // 축소 시 살짝 크게, 확대 시 더 크게 (정비례)
+      const zoomFactor = Math.pow(1.08, zoomLevel - 7); // 1.08x per zoom level (확대 시 더 크게)
+      const iconSize = Math.max(30, Math.min(55, baseSize * zoomFactor)); // Min 30px, Max 55px
+      const anchorSize = iconSize / 2;
+      
+      // Use local downloaded image with error handling
+      const icon = L.icon({
+        iconUrl: 'megabox_icon.jpg',
+        iconSize: [iconSize, iconSize],
+        iconAnchor: [anchorSize, anchorSize],
+        popupAnchor: [0, -anchorSize],
+        className: 'megabox-logo-icon'
+      });
+      
+      // Add error handling for image loading
+      const img = new Image();
+      img.onerror = function() {
+        console.warn('로컬 이미지를 로드할 수 없습니다. 기본 마커를 사용합니다.');
+      };
+      img.src = 'megabox_icon.jpg';
+      
+      return icon;
+    }
+
+    // 특별관 개수에 따른 투명도 계산 (3단계)
+    function getOpacityBySpecialHallCount(count) {
+      if (count === 0) return 0.25; // 특별관이 없는 지점은 25% 투명도
+      if (count === 1) return 0.5; // 1개 특별관은 50% 투명도
+      return 1.0; // 2개 이상은 100% 불투명
+    }
+
+    function appendListItem(text, ok) {
+      const li = document.createElement('li');
+      li.textContent = text;
+      if(ok === false) li.style.color = '#b00020';
+      listEl.appendChild(li);
+    }
+
+    // Update all marker icons based on current zoom level
+    function updateMarkerIcons() {
+      const currentZoom = map.getZoom();
+      const newIcon = createMegaboxIcon(currentZoom);
+      
+      markers.forEach(marker => {
+        marker.setIcon(newIcon);
+      });
+    }
+
+    // Get region for a branch
+    function getBranchRegion(branchName) {
+      // 부산/대구/경상 지점 (먼저 체크 - 구미가 구의에 포함되지 않도록)
+      if (branchName.includes('부산') || branchName.includes('해운대') || branchName.includes('센텀') ||
+          branchName.includes('사상') || branchName.includes('서면') || branchName.includes('대구') ||
+          branchName.includes('이시아') || branchName.includes('포항') || branchName.includes('진주') ||
+          branchName.includes('창원') || branchName.includes('김해') || branchName.includes('마산') ||
+          branchName.includes('양산') || branchName.includes('경산') || branchName.includes('구미') ||
+          branchName.includes('김천') || branchName.includes('안동') || branchName.includes('경주')) {
+        return 'busan';
+      }
+      // 강원 지점
+      else if (branchName.includes('원주') || branchName.includes('춘천') || branchName.includes('속초')) {
+        return 'gangwon';
+      }
+      // 광주/전라 지점
+      else if (branchName.includes('광주') || branchName.includes('전주') || branchName.includes('군산') ||
+               branchName.includes('익산') || branchName.includes('목포') || branchName.includes('여수') ||
+               branchName.includes('순천')) {
+        return 'gwangju';
+      }
+      // 서울 지점
+      else if (branchName.includes('서울') || branchName.includes('강남') || branchName.includes('강동') || 
+               branchName.includes('구의') || branchName.includes('군자') || branchName.includes('목동') ||
+               branchName.includes('동대문') || branchName.includes('마곡') || branchName.includes('상봉') ||
+               branchName.includes('상암') || branchName.includes('성수') || branchName.includes('센트럴') ||
+               branchName.includes('송파') || branchName.includes('신촌') || branchName.includes('이수') ||
+               branchName.includes('창동') || branchName.includes('코엑스') || branchName.includes('픽쳐하우스') ||
+               branchName.includes('홍대') || branchName.includes('화곡') || branchName.includes('ARTNINE')) {
+        return 'seoul';
+      }
+      // 경기 지점
+      else if (branchName.includes('고양') || branchName.includes('광명') || branchName.includes('금정') ||
+               branchName.includes('김포') || branchName.includes('남양주') || branchName.includes('동탄') ||
+               branchName.includes('미사') || branchName.includes('백석') || branchName.includes('별내') ||
+               branchName.includes('부천') || branchName.includes('분당') || branchName.includes('성남') ||
+               branchName.includes('수원') || branchName.includes('시흥') || branchName.includes('안산') ||
+               branchName.includes('안성') || branchName.includes('용인') || branchName.includes('의정부') ||
+               branchName.includes('킨텍스') || branchName.includes('파주') || branchName.includes('평택') ||
+               branchName.includes('하남')) {
+        return 'gyeonggi';
+      }
+      // 인천 지점
+      else if (branchName.includes('검단') || branchName.includes('송도') || branchName.includes('영종') ||
+               branchName.includes('인천') || branchName.includes('청라')) {
+        return 'incheon';
+      }
+      // 대전/충청 지점
+      else if (branchName.includes('대전') || branchName.includes('둔산') || branchName.includes('유성') ||
+               branchName.includes('세종') || branchName.includes('청주') || branchName.includes('충주') ||
+               branchName.includes('공주') || branchName.includes('논산') || branchName.includes('천안') ||
+               branchName.includes('아산') || branchName.includes('서산') || branchName.includes('홍성') ||
+               branchName.includes('제천') || branchName.includes('보은')) {
+        return 'daejeon';
+      }
+      // 제주 지점
+      else if (branchName.includes('제주') || branchName.includes('서귀포')) {
+        return 'jeju';
+      }
+      return 'all';
+    }
+
+
+    // Filter markers by region
+    function filterMarkers(region) {
+      currentFilter = region;
+      
+      // Update button states
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      document.querySelector(`[data-region="${region}"]`).classList.add('active');
+      
+      // Clear existing markers
+      markers.forEach(marker => map.removeLayer(marker));
+      markers.length = 0;
+      listEl.innerHTML = '';
+      
+      // Add filtered markers
+      const currentZoom = map.getZoom();
+      const megaboxIcon = createMegaboxIcon(currentZoom);
+      let addedCount = 0;
+      const newBounds = L.latLngBounds();
+      
+      branches.forEach(branch => {
+        if (branch.lat && branch.lng) {
+          const branchRegion = getBranchRegion(branch.name);
+          if (region === 'all' || branchRegion === region) {
+            const lat = parseFloat(branch.lat);
+            const lon = parseFloat(branch.lng);
+            const m = L.marker([lat, lon], { icon: megaboxIcon }).addTo(map);
+            const address = branch.address || '주소 정보 없음';
+            
+            // Create booking popup content with special info
+            const bookingUrl = branchBookingUrls[branch.name] || 'https://www.megabox.co.kr/';
+            const specialInfo = specialHallsData[branch.name] || { 
+              specialTheaters: [], 
+              region: "정보 없음"
+            };
+            
+            const specialTheatersHtml = specialInfo.specialTheaters.length > 0 
+              ? `<div style="margin: 8px 0; font-size: 12px;">
+                   <strong style="color: #6D28D9;">특수 상영관:</strong> ${specialInfo.specialTheaters.join(', ')}
+                 </div>`
+              : '';
+            
+            const popupContent = `
+              <h3>${branch.name}</h3>
+              <p style="margin: 0 0 12px; color: #666; font-size: 12px;">${address}</p>
+              ${specialTheatersHtml}
+              <button class="book-btn" onclick="window.open('${bookingUrl}', '_blank')">
+                예매하러 가기
+              </button>
+            `;
+            
+            m.bindPopup(popupContent);
+            markers.push(m);
+            newBounds.extend([lat, lon]);
+            appendListItem(`✔ ${branch.name}`, true);
+            addedCount++;
+          }
+        }
+      });
+      
+      // Fit map to show filtered markers
+      if (markers.length > 0) {
+        if (region === 'all') {
+          // 전체 선택 시 초기 줌 레벨로 설정
+          map.setView([36.5, 127.5], 8);
+        } else {
+          map.fitBounds(newBounds.pad(0.1));
+        }
+        statusEl.textContent = `완료 (${addedCount}개 지점 표시)`;
+      } else {
+        statusEl.textContent = '오류 (표시된 지점 없음)';
+      }
+    }
+
+    // 특별관 전체 보기 (모든 특별관이 있는 지점만 표시)
+    function showAllSpecialHalls() {
+      // Clear existing markers
+      markers.forEach(marker => map.removeLayer(marker));
+      markers.length = 0;
+      listEl.innerHTML = '';
+      
+      let addedCount = 0;
+      const newBounds = L.latLngBounds();
+      
+      branches.forEach(branch => {
+        if (branch.lat && branch.lng) {
+          const specialInfo = specialHallsData[branch.name];
+          
+          if (specialInfo && specialInfo.specialTheaters && specialInfo.specialTheaters.length > 0) {
+            const lat = parseFloat(branch.lat);
+            const lon = parseFloat(branch.lng);
+            const m = L.marker([lat, lon], { icon: createMegaboxIcon(map.getZoom()) }).addTo(map);
+            
+            // Create popup with special info
+            const bookingUrl = branchBookingUrls[branch.name] || 'https://www.megabox.co.kr/';
+            const address = branch.address || '주소 정보 없음';
+            const specialTheatersHtml = specialInfo.specialTheaters.length > 0 
+              ? `<div style="margin: 8px 0; font-size: 12px;">
+                   <strong style="color: #6D28D9;">특별관:</strong> ${specialInfo.specialTheaters.join(', ')}
+                 </div>`
+              : '';
+            
+            const popupContent = `
+              <h3>${branch.name}</h3>
+              <p style="margin: 0 0 12px; color: #666; font-size: 12px;">${address}</p>
+              ${specialTheatersHtml}
+              <button class="book-btn" onclick="window.open('${bookingUrl}', '_blank')">
+                예매하러 가기
+              </button>
+            `;
+            
+            m.bindPopup(popupContent);
+            markers.push(m);
+            newBounds.extend([lat, lon]);
+            appendListItem(`✔ ${branch.name} (특별관 ${specialInfo.specialTheaters.length}개)`, true);
+            addedCount++;
+          }
+        }
+      });
+      
+      if (markers.length > 0) {
+        // 전체 선택 시 초기 줌 레벨로 설정 (지역별 필터의 '전체'와 동일)
+        map.setView([36.5, 127.5], 8);
+        statusEl.textContent = `특별관 전체 (${addedCount}개 지점)`;
+      } else {
+        statusEl.textContent = '특별관이 있는 지점이 없습니다.';
+      }
+    }
+
+    // 특별관 비교 보기 (투명도로 밀집도 시각화)
+    function showSpecialHallComparison() {
+      // Clear existing markers
+      markers.forEach(marker => map.removeLayer(marker));
+      markers.length = 0;
+      listEl.innerHTML = '';
+      
+      let addedCount = 0;
+      const newBounds = L.latLngBounds();
+      
+      // 특별관 개수별로 정렬 (높은 순서대로) - 진한 아이콘이 위에 오도록
+      const branchesWithSpecialHalls = branches.map(branch => {
+        const specialInfo = specialHallsData[branch.name];
+        const specialHallCount = specialInfo && specialInfo.specialTheaters ? specialInfo.specialTheaters.length : 0;
+        return { ...branch, specialHallCount };
+      }).sort((a, b) => b.specialHallCount - a.specialHallCount);
+      
+      // 투명한 아이콘부터 먼저 추가 (아래 레이어)
+      const transparentBranches = branchesWithSpecialHalls.filter(branch => branch.specialHallCount <= 1);
+      const opaqueBranches = branchesWithSpecialHalls.filter(branch => branch.specialHallCount >= 2);
+      
+      // 투명한 아이콘들 먼저 추가
+      transparentBranches.forEach(branch => {
+        if (branch.lat && branch.lng) {
+          const lat = parseFloat(branch.lat);
+          const lon = parseFloat(branch.lng);
+          
+          const specialInfo = specialHallsData[branch.name];
+          const specialHallCount = specialInfo && specialInfo.specialTheaters ? specialInfo.specialTheaters.length : 0;
+          const opacity = getOpacityBySpecialHallCount(specialHallCount);
+          
+          const m = L.marker([lat, lon], { 
+            icon: createMegaboxIcon(map.getZoom(), opacity),
+            opacity: opacity
+          }).addTo(map);
+          
+          const bookingUrl = branchBookingUrls[branch.name] || 'https://www.megabox.co.kr/';
+          const address = branch.address || '주소 정보 없음';
+          const specialTheatersHtml = specialInfo && specialInfo.specialTheaters && specialInfo.specialTheaters.length > 0 
+            ? `<div style="margin: 8px 0; font-size: 12px;">
+                 <strong style="color: #6D28D9;">특별관:</strong> ${specialInfo.specialTheaters.join(', ')}
+               </div>`
+            : '<div style="margin: 8px 0; font-size: 12px; color: #999;">특별관 없음</div>';
+          
+          const popupContent = `
+            <h3>${branch.name}</h3>
+            <p style="margin: 0 0 12px; color: #666; font-size: 12px;">${address}</p>
+            ${specialTheatersHtml}
+            <button class="book-btn" onclick="window.open('${bookingUrl}', '_blank')">
+              예매하러 가기
+            </button>
+          `;
+          
+          m.bindPopup(popupContent);
+          markers.push(m);
+          newBounds.extend([lat, lon]);
+          
+          appendListItem(`✔ ${branch.name} (특별관 ${specialHallCount}개)`, true);
+          addedCount++;
+        }
+      });
+      
+      // 진한 아이콘들 나중에 추가 (위 레이어)
+      opaqueBranches.forEach(branch => {
+        if (branch.lat && branch.lng) {
+          const lat = parseFloat(branch.lat);
+          const lon = parseFloat(branch.lng);
+          
+          const specialInfo = specialHallsData[branch.name];
+          const specialHallCount = specialInfo && specialInfo.specialTheaters ? specialInfo.specialTheaters.length : 0;
+          const opacity = getOpacityBySpecialHallCount(specialHallCount);
+          
+          const m = L.marker([lat, lon], { 
+            icon: createMegaboxIcon(map.getZoom(), opacity),
+            opacity: opacity
+          }).addTo(map);
+          
+          const bookingUrl = branchBookingUrls[branch.name] || 'https://www.megabox.co.kr/';
+          const address = branch.address || '주소 정보 없음';
+          const specialTheatersHtml = specialInfo && specialInfo.specialTheaters && specialInfo.specialTheaters.length > 0 
+            ? `<div style="margin: 8px 0; font-size: 12px;">
+                 <strong style="color: #6D28D9;">특별관:</strong> ${specialInfo.specialTheaters.join(', ')}
+               </div>`
+            : '<div style="margin: 8px 0; font-size: 12px; color: #999;">특별관 없음</div>';
+          
+          const popupContent = `
+            <h3>${branch.name}</h3>
+            <p style="margin: 0 0 12px; color: #666; font-size: 12px;">${address}</p>
+            ${specialTheatersHtml}
+            <button class="book-btn" onclick="window.open('${bookingUrl}', '_blank')">
+              예매하러 가기
+            </button>
+          `;
+          
+          m.bindPopup(popupContent);
+          markers.push(m);
+          newBounds.extend([lat, lon]);
+          
+          appendListItem(`✔ ${branch.name} (특별관 ${specialHallCount}개)`, true);
+          addedCount++;
+        }
+      });
+      
+      if (markers.length > 0) {
+        // 전체 선택 시 초기 줌 레벨로 설정 (지역별 필터의 '전체'와 동일)
+        map.setView([36.5, 127.5], 8);
+        statusEl.textContent = `상영관 비교 (${addedCount}개 지점)`;
+      } else {
+        statusEl.textContent = '지점이 없습니다.';
+      }
+    }
+
+    // Add all markers instantly
+    function addAllMarkers() {
+      filterMarkers('all');
+    }
+
+    // Add zoom event listener for dynamic icon sizing
+    map.on('zoomend', function() {
+      updateMarkerIcons();
+    });
+
+    // 거리 계산 함수
+    function calculateDistance(lat1, lng1, lat2, lng2) {
+      const R = 6371; // 지구 반지름 (km)
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLng/2) * Math.sin(dLng/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    // 가장 가까운 지점 찾기
+    function findNearestBranch(userLat, userLng) {
+      let nearest = null;
+      let minDistance = Infinity;
+      
+      branches.forEach(branch => {
+        if (branch.lat && branch.lng) {
+          const distance = calculateDistance(userLat, userLng, branch.lat, branch.lng);
+          if (distance < minDistance) {
+            minDistance = distance;
+            nearest = branch;
+          }
+        }
+      });
+      
+      return { branch: nearest, distance: minDistance };
+    }
+
+    // 내 위치에서 가까운 지점 찾기
+    function findNearestBranchFromUserLocation() {
+      if (!navigator.geolocation) {
+        alert('위치 서비스를 지원하지 않는 브라우저입니다.');
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        function(position) {
+          const userLat = position.coords.latitude;
+          const userLng = position.coords.longitude;
+          
+          const nearest = findNearestBranch(userLat, userLng);
+          
+          if (nearest.branch) {
+            // 지도를 가장 가까운 지점으로 이동
+            map.setView([nearest.branch.lat, nearest.branch.lng], 15);
+            
+            // 결과 표시
+            alert(`${nearest.branch.name}이 가장 가깝습니다.\n거리: ${nearest.distance.toFixed(1)}km`);
+          }
+        },
+        function(error) {
+          alert('위치 정보를 가져올 수 없습니다: ' + error.message);
+        }
+      );
+    }
+
+    // 특별관 필터
+    function filterByTheater(theaterType) {
+      console.log('특별관 필터링 시작:', theaterType);
+      console.log('현재 데이터:', specialHallsData);
+      
+      // Clear existing markers
+      markers.forEach(marker => map.removeLayer(marker));
+      markers.length = 0;
+      listEl.innerHTML = '';
+      
+      let addedCount = 0;
+      const newBounds = L.latLngBounds();
+      
+      // 특별관 타입 매핑
+      const theaterTypeMap = {
+        'dolbycinema': 'Dolby Cinema',
+        'dolbyvision': 'Dolby Vision + Atmos',
+        'dolbyatmos': 'Dolby Atmos',
+        'mx4d': 'MX4D',
+        'led': 'LED',
+        'boutique': 'BOUTIQUE by MEGA',
+        'boutiqueprivate': 'BOUTIQUE PRIVATE by MEGA',
+        'balcony': 'BALCONY',
+        'comfort': 'COMFORT by MEGA'
+      };
+      
+      const targetTheater = theaterTypeMap[theaterType];
+      
+      branches.forEach(branch => {
+        if (branch.lat && branch.lng) {
+          const specialInfo = specialHallsData[branch.name];
+          console.log(`지점: ${branch.name}, 특별관:`, specialInfo);
+          
+          if (specialInfo && specialInfo.specialTheaters && specialInfo.specialTheaters.length > 0) {
+            const hasTheater = specialInfo.specialTheaters.includes(targetTheater);
+            console.log(`${branch.name}에서 ${targetTheater} 찾기:`, hasTheater);
+            
+            if (hasTheater) {
+              const lat = parseFloat(branch.lat);
+              const lon = parseFloat(branch.lng);
+              const m = L.marker([lat, lon], { icon: createMegaboxIcon(map.getZoom()) }).addTo(map);
+              
+              // Create popup with special info
+              const bookingUrl = branchBookingUrls[branch.name] || 'https://www.megabox.co.kr/';
+              const address = branch.address || '주소 정보 없음';
+              const specialTheatersHtml = specialInfo.specialTheaters.length > 0 
+                ? `<div style="margin: 8px 0; font-size: 12px;">
+                     <strong style="color: #6D28D9;">특별관:</strong> ${specialInfo.specialTheaters.join(', ')}
+                   </div>`
+                : '';
+              
+              const popupContent = `
+                <h3>${branch.name}</h3>
+                <p style="margin: 0 0 12px; color: #666; font-size: 12px;">${address}</p>
+                ${specialTheatersHtml}
+                <button class="book-btn" onclick="window.open('${bookingUrl}', '_blank')">
+                  예매하러 가기
+                </button>
+              `;
+              
+              m.bindPopup(popupContent);
+              markers.push(m);
+              newBounds.extend([lat, lon]);
+              appendListItem(`✔ ${branch.name}`, true);
+              addedCount++;
+            }
+          }
+        }
+      });
+      
+      if (markers.length > 0) {
+        // COMFORT by MEGA 필터는 특별관 전체와 같은 줌 레벨 사용
+        if (theaterType === 'comfort') {
+          map.setView([36.5, 127.5], 8);
+        } else {
+          map.fitBounds(newBounds.pad(0.1));
+        }
+        statusEl.textContent = `${targetTheater} (${addedCount}개 지점)`;
+      } else {
+        statusEl.textContent = `${targetTheater}이 있는 지점이 없습니다.`;
+      }
+    }
+
+    // Add filter button event listeners
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const region = this.getAttribute('data-region');
+        const theater = this.getAttribute('data-theater');
+        const special = this.getAttribute('data-special');
+        
+        if (region) {
+          // 지역 필터 활성화 상태 관리
+          document.querySelectorAll('[data-region]').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          filterMarkers(region);
+        } else if (theater) {
+          // 특별관 필터 활성화 상태 관리
+          document.querySelectorAll('[data-theater]').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          filterByTheater(theater);
+        } else if (special) {
+          // 특별관 분석 필터 활성화 상태 관리
+          document.querySelectorAll('[data-special]').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          
+          if (special === 'all') {
+            showAllSpecialHalls();
+          } else if (special === 'compare') {
+            showSpecialHallComparison();
+          }
+        }
+      });
+    });
+
+    // Initialize map with all markers
+    addAllMarkers();
+    
+    // Custom tooltip for info icon
+    const tooltipIcon = document.getElementById('tooltip-icon');
+    const tooltipContent = document.createElement('div');
+    tooltipContent.className = 'tooltip-content';
+    tooltipContent.innerHTML = `
+      <div class="tooltip-title">상영관 비교</div>
+      보유한 특별관 수에 따라<br>
+      각 지점을 불투명도로 비교 표시
+    `;
+    tooltipIcon.appendChild(tooltipContent);
+    
+    tooltipIcon.addEventListener('mouseenter', () => {
+      tooltipContent.classList.add('show');
+    });
+    
+    tooltipIcon.addEventListener('mouseleave', () => {
+      tooltipContent.classList.remove('show');
+    });
+  </script>
+</body>
+</html>
