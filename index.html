@@ -1,0 +1,1348 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>전국 메가박스 지도</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.7.3/maplibre-gl.css"/>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; width: 100%; }
+    /* Left control stack container (transparent) */
+    .left-controls {
+      position: absolute; top: 12px; left: 12px; z-index: 1000;
+      width: 280px;
+      background: transparent;
+      display: flex; flex-direction: column;
+    }
+
+    .panel {
+      background: #6D28D9; padding: 20px 24px 30px; border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.15);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      width: 280px; /* 좌우 폭 줄임 */
+      height: 200px; /* 고정 높이 */
+      overflow: hidden; /* 내용이 넘치면 숨김 */
+    }
+    .panel h1 { margin: 0 0 12px; font-size: 20px; color: white; }
+    .panel p { margin: 6px 0; font-size: 12px; color: rgba(255,255,255,0.8); }
+    .panel code { font-size: 12px; color: white; }
+    .list { margin-top: 8px; max-height: 120px; overflow: auto; font-size: 12px; color: white; }
+    .list li { margin: 3px 0; color: white; }
+    
+    /* Custom scrollbar styling to match panel color */
+    .list::-webkit-scrollbar { width: 8px; }
+    .list::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 4px; }
+    .list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 4px; }
+    .list::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
+    
+    /* Firefox scrollbar styling */
+    .list { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.3) rgba(255,255,255,0.1); }
+    .badge { display: inline-block; background: rgba(255,255,255,0.2); color: white; border-radius: 999px; padding:2px 8px; font-size:11px; }
+    .status { margin-top: 10px; margin-bottom: 8px; font-size: 12px; color: white; }
+    
+    /* Filter panel styling */
+    .filter-panel {
+      background: #ffffff; padding: 20px 24px; border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.12);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      width: 280px; /* 위 패널과 정확히 동일한 고정 너비 */
+      height: auto; /* 내용에 따라 높이 자동 조정 */
+      margin-top: 10px; /* 패널 간 간격 10px */
+    }
+    .filter-panel h2 { margin: 0 0 12px; font-size: 16px; color: #222; }
+    .filter-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+    .filter-btn {
+      background: #f2eefb; color: #5f45a8; border: 1px solid #ece5fa;
+      padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 500;
+      cursor: pointer; transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+    .filter-btn:not(.active):hover { background: #d9c5f1; border-color: #c5abea; color: #4f2a9c; }
+    .filter-btn.active { background: #6D28D9; border-color: #6D28D9; color: #fff; font-weight: 600; }
+    
+    /* Special panel styling */
+    .special-panel {
+      background: #ffffff; padding: 20px 24px; border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.12);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      width: 280px;
+      height: auto;
+      margin-top: 10px; /* 패널 간 간격 10px */
+    }
+    .special-panel h2 { margin: 0 0 12px; font-size: 16px; color: #222; }
+    .theater-groups { display: flex; flex-direction: column; gap: 16px; }
+    .theater-group h3 { margin: 0 0 8px; font-size: 12px; color: #777; font-weight: 600; }
+    .theater-group .filter-buttons { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    
+    /* Info icon styling */
+    .info-icon {
+      display: inline-block;
+      font-size: 14px;
+      margin-left: 4px;
+      color: #aaa;
+      opacity: 1;
+      cursor: default;
+      position: relative;
+      transition: color 0.16s ease;
+    }
+    .info-icon:hover {
+      color: #6D28D9;
+      opacity: 1;
+    }
+    
+    /* Custom tooltip */
+    .tooltip-content {
+      position: absolute;
+      top: 50%;
+      left: 100%;
+      transform: translateY(-50%);
+      background: white;
+      color: #666;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+      pointer-events: none;
+      margin-left: 8px;
+      width: auto;
+      min-width: 160px;
+      max-width: 200px;
+      text-align: left;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      border: 1px solid #e0e0e0;
+      line-height: 1.4;
+    }
+    
+    .tooltip-content.show {
+      opacity: 1;
+      visibility: visible;
+    }
+    
+    .tooltip-title {
+      font-weight: 600;
+      color: #333;
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    
+    /* Custom icon styles
+       IMPORTANT: MapLibre writes translate/rotate transforms to the OUTER marker element.
+       Never animate that transform, or the marker visually trails behind the map. */
+    .megabox-marker {
+      display: block;
+      line-height: 0;
+      cursor: pointer;
+      will-change: transform;
+      /* no transition on transform */
+    }
+    .megabox-marker .megabox-logo-icon {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border-radius: 9px;
+      object-fit: cover;
+      filter: drop-shadow(0 3px 6px rgba(0,0,0,0.35));
+      transition: transform 0.16s ease, filter 0.16s ease;
+      transform-origin: center center;
+      pointer-events: none;
+    }
+    .megabox-marker:hover .megabox-logo-icon {
+      transform: scale(1.12);
+      filter: drop-shadow(0 5px 10px rgba(0,0,0,0.42));
+    }
+    
+    /* Movie preview popup styles */
+    .movie-preview-popup {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+      padding: 20px;
+      max-width: 300px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+    .movie-preview-popup h3 {
+      margin: 0 0 12px;
+      color: #6D28D9;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .movie-list {
+      margin: 0 0 16px;
+      padding: 0;
+      list-style: none;
+    }
+    .movie-list li {
+      padding: 6px 0;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 14px;
+      color: #333;
+    }
+    .movie-list li:last-child {
+      border-bottom: none;
+    }
+    .book-btn {
+      background: #6D28D9;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.2s ease;
+    }
+    .book-btn:hover {
+      background: #5B21B6;
+    }
+
+    /* MapLibre basemap integration */
+    .maplibregl-map { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    .maplibregl-canvas { outline: none; }
+    .maplibregl-popup { z-index: 1200; }
+    .maplibregl-popup-content {
+      border-radius: 12px; padding: 18px; min-width: 230px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.16);
+    }
+    .maplibregl-popup-content h3 { margin: 0 24px 10px 0; color: #6D28D9; font-size: 16px; }
+    .maplibregl-popup-close-button { font-size: 22px; color: #777; padding: 4px 8px; }
+    .maplibregl-ctrl-top-right { top: 8px; right: 8px; }
+    .maplibregl-ctrl-group { border-radius: 10px; overflow: hidden; }
+  
+    /* Custom map attribution: always starts collapsed as an ⓘ button */
+    .custom-map-attrib {
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+      background: transparent !important;
+      box-shadow: none !important;
+      margin: 0 10px 10px 0 !important;
+    }
+    .custom-map-attrib-toggle {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      border-radius: 50%;
+      background: #fff !important;
+      color: #000 !important;
+      opacity: 1 !important;
+      cursor: pointer;
+      box-shadow: 0 1px 5px rgba(0,0,0,.22);
+      padding: 0;
+      filter: none !important;
+    }
+    .custom-map-attrib-toggle::before {
+      content: 'i';
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 15px;
+      height: 15px;
+      border: 1.7px solid #000;
+      border-radius: 50%;
+      color: #000;
+      font: 700 11px/1 Arial, Helvetica, sans-serif;
+      box-sizing: border-box;
+      transition: color 0.15s ease, border-color 0.15s ease;
+    }
+    .custom-map-attrib-toggle:hover::before {
+      color: #fff;
+      border-color: #fff;
+    }
+    .custom-map-attrib-toggle:hover {
+      background: #6D28D9 !important;
+      color: #fff !important;
+      opacity: 1 !important;
+      filter: none !important;
+    }
+    .custom-map-attrib-toggle:focus,
+    .custom-map-attrib-toggle:active {
+      opacity: 1 !important;
+      filter: none !important;
+    }
+    .custom-map-attrib-panel {
+      position: absolute;
+      right: 32px;
+      bottom: 0;
+      white-space: nowrap;
+      background: rgba(255,255,255,.96);
+      color: #666;
+      padding: 5px 8px;
+      border-radius: 5px;
+      font-size: 10px;
+      line-height: 16px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.18);
+    }
+    .custom-map-attrib-panel[hidden] { display: none !important; }
+    .custom-map-attrib-panel a { color: #555; text-decoration: none; }
+    .custom-map-attrib-panel a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="left-controls">
+    <div class="panel">
+      <h1>전국 메가박스 지도</h1>
+      <p>전국의 모든 메가박스 지점을 표시합니다.</p>
+      <ul id="branchList" class="list"></ul>
+      <div class="status">
+        상태: <span id="status" class="badge">로딩 중...</span>
+      </div>
+    </div>
+
+    <div class="filter-panel">
+      <h2>지역별 필터</h2>
+      <div class="filter-buttons">
+        <button class="filter-btn active" data-region="all">전체 (111)</button>
+        <button class="filter-btn" data-region="seoul">서울 (19)</button>
+        <button class="filter-btn" data-region="gyeonggi">경기 (29)</button>
+        <button class="filter-btn" data-region="incheon">인천 (6)</button>
+        <button class="filter-btn" data-region="daejeon">대전/충청 (14)</button>
+        <button class="filter-btn" data-region="busan">부산/대구/경상 (18)</button>
+        <button class="filter-btn" data-region="gwangju">광주/전라 (8)</button>
+        <button class="filter-btn" data-region="gangwon">강원 (3)</button>
+        <button class="filter-btn" data-region="jeju">제주 (2)</button>
+      </div>
+    </div>
+
+    <div class="special-panel">
+    <h2>특별관 필터</h2>
+    <div class="theater-groups">
+      <div class="theater-group">
+        <h3>DOLBY</h3>
+        <div class="filter-buttons">
+          <button class="filter-btn" data-theater="dolbycinema">Dolby Cinema</button>
+          <button class="filter-btn" data-theater="dolbyvision">Dolby Vision + Atmos</button>
+          <button class="filter-btn" data-theater="dolbyatmos">Dolby Atmos</button>
+        </div>
+      </div>
+      <div class="theater-group">
+        <h3>MEGA</h3>
+        <div class="filter-buttons">
+          <button class="filter-btn" data-theater="mx4d">MX4D</button>
+          <button class="filter-btn" data-theater="led">LED</button>
+        </div>
+      </div>
+      <div class="theater-group">
+        <h3>PREMIUM</h3>
+        <div class="filter-buttons">
+          <button class="filter-btn" data-theater="comfort">COMFORT by MEGA</button>
+          <button class="filter-btn" data-theater="boutique">BOUTIQUE by MEGA</button>
+          <button class="filter-btn" data-theater="boutiqueprivate">BOUTIQUE PRIVATE by MEGA</button>
+          <button class="filter-btn" data-theater="balcony">BALCONY</button>
+        </div>
+      </div>
+      <div class="theater-group">
+        <div class="filter-buttons">
+          <button class="filter-btn" data-special="all">특별관 전체</button>
+          <button class="filter-btn" data-special="compare">상영관 비교</button>
+          <span class="info-icon" id="tooltip-icon">ⓘ</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.7.3/maplibre-gl.js"></script>
+  <script>
+    // 지점별 예매 페이지 URL 매핑
+    const branchBookingUrls = {
+      "메가박스 강남": "https://www.megabox.co.kr/theater?brchNo=001",
+      "메가박스 홍대": "https://www.megabox.co.kr/theater?brchNo=002", 
+      "메가박스 코엑스": "https://www.megabox.co.kr/theater?brchNo=003",
+      "메가박스 센트럴": "https://www.megabox.co.kr/theater?brchNo=004",
+      "메가박스 신촌": "https://www.megabox.co.kr/theater?brchNo=005",
+      "메가박스 강동": "https://www.megabox.co.kr/theater?brchNo=006",
+      "메가박스 목동": "https://www.megabox.co.kr/theater?brchNo=007",
+      "메가박스 상암월드컵경기장": "https://www.megabox.co.kr/theater?brchNo=008",
+      "메가박스 구의이스트폴": "https://www.megabox.co.kr/theater?brchNo=009",
+      "메가박스 군자": "https://www.megabox.co.kr/theater?brchNo=010",
+      "메가박스 동대문": "https://www.megabox.co.kr/theater?brchNo=011",
+      "메가박스 마곡": "https://www.megabox.co.kr/theater?brchNo=012",
+      "메가박스 상봉": "https://www.megabox.co.kr/theater?brchNo=013",
+      "메가박스 성수": "https://www.megabox.co.kr/theater?brchNo=014",
+      "메가박스 송파파크하비오": "https://www.megabox.co.kr/theater?brchNo=015",
+      "메가박스 이수": "https://www.megabox.co.kr/theater?brchNo=016",
+      "메가박스 창동": "https://www.megabox.co.kr/theater?brchNo=017",
+      "메가박스 픽쳐하우스": "https://www.megabox.co.kr/theater?brchNo=018",
+      "메가박스 화곡": "https://www.megabox.co.kr/theater?brchNo=019",
+      "메가박스 ARTNINE": "https://www.megabox.co.kr/theater?brchNo=020"
+    };
+
+    // 새로운 특별관 데이터 로드
+    let specialHallsData = {};
+    let theaterGroups = {};
+    
+    // 하드코딩된 데이터로 직접 설정 (JSON 로드 문제 해결)
+    specialHallsData = {
+      // DOLBY 그룹
+      "메가박스 코엑스": { specialTheaters: ["Dolby Cinema", "MX4D", "LED", "BOUTIQUE by MEGA", "BOUTIQUE PRIVATE by MEGA"], region: "서울" },
+      "메가박스 남양주현대아울렛스페이스원": { specialTheaters: ["Dolby Cinema"], region: "경기" },
+      "메가박스 대전신세계": { specialTheaters: ["Dolby Cinema", "BOUTIQUE by MEGA"], region: "대전" },
+      "메가박스 대구": { specialTheaters: ["Dolby Cinema"], region: "대구" },
+      "메가박스 송도(트리플스트리트)": { specialTheaters: ["Dolby Cinema", "BALCONY"], region: "인천" },
+      "메가박스 수원AK플라자(수원역)": { specialTheaters: ["Dolby Cinema", "MX4D"], region: "경기" },
+      "메가박스 안성스타필드": { specialTheaters: ["Dolby Cinema"], region: "경기" },
+      "메가박스 하남스타필드": { specialTheaters: ["Dolby Cinema", "MX4D", "BOUTIQUE by MEGA", "BALCONY"], region: "경기" },
+      
+      "메가박스 구의이스트폴": { specialTheaters: ["Dolby Vision + Atmos", "LED"], region: "서울" },
+      "메가박스 목동": { specialTheaters: ["Dolby Vision + Atmos"], region: "서울" },
+      "메가박스 청주": { specialTheaters: ["Dolby Vision + Atmos"], region: "충북" },
+      
+      "메가박스 고양스타필드": { specialTheaters: ["Dolby Atmos"], region: "경기" },
+      "메가박스 대전": { specialTheaters: ["Dolby Atmos"], region: "대전" },
+      "메가박스 상암월드컵경기장": { specialTheaters: ["Dolby Atmos"], region: "서울" },
+      "메가박스 성수": { specialTheaters: ["Dolby Atmos", "BOUTIQUE by MEGA"], region: "서울" },
+      "메가박스 수원스타필드": { specialTheaters: ["Dolby Atmos"], region: "경기" },
+      "메가박스 원주혁신": { specialTheaters: ["Dolby Atmos"], region: "강원" },
+      "메가박스 전주혁신": { specialTheaters: ["Dolby Atmos"], region: "전북" },
+      "메가박스 충주": { specialTheaters: ["Dolby Atmos"], region: "충북" },
+      "메가박스 포항": { specialTheaters: ["Dolby Atmos"], region: "경북" },
+      
+      // MEGA 그룹
+      "메가박스 수원AK플라자(수원역)": { specialTheaters: ["Dolby Cinema", "MX4D", "LED"], region: "경기" },
+      "메가박스 코엑스": { specialTheaters: ["Dolby Cinema", "MX4D", "LED", "BOUTIQUE by MEGA", "BOUTIQUE PRIVATE by MEGA"], region: "서울" },
+      "메가박스 하남스타필드": { specialTheaters: ["Dolby Cinema", "MX4D", "BOUTIQUE by MEGA", "BALCONY"], region: "경기" },
+      
+      "메가박스 구의이스트폴": { specialTheaters: ["Dolby Vision + Atmos", "LED"], region: "서울" },
+      
+      // PREMIUM 그룹
+      "메가박스 더부티크목동현대백화점": { specialTheaters: ["BOUTIQUE by MEGA"], region: "서울" },
+      "메가박스 센트럴": { specialTheaters: ["BOUTIQUE by MEGA"], region: "서울" },
+      "메가박스 분당": { specialTheaters: ["BOUTIQUE by MEGA", "BALCONY"], region: "경기" },
+      "메가박스 성수": { specialTheaters: ["Dolby Atmos", "BOUTIQUE by MEGA"], region: "서울" },
+      "메가박스 킨텍스": { specialTheaters: ["BOUTIQUE by MEGA"], region: "경기" },
+      "메가박스 대전신세계": { specialTheaters: ["Dolby Cinema", "BOUTIQUE by MEGA"], region: "대전" },
+      
+      "메가박스 코엑스": { specialTheaters: ["Dolby Cinema", "MX4D", "LED", "BOUTIQUE by MEGA", "BOUTIQUE PRIVATE by MEGA"], region: "서울" },
+      
+      "메가박스 송도(트리플스트리트)": { specialTheaters: ["Dolby Cinema", "BALCONY"], region: "인천" },
+      "메가박스 하남스타필드": { specialTheaters: ["Dolby Cinema", "MX4D", "BOUTIQUE by MEGA", "BALCONY"], region: "경기" },
+      
+      // COMFORT by MEGA - 주요 지점들만
+      "메가박스 검단": { specialTheaters: ["COMFORT by MEGA"], region: "인천" },
+      "메가박스 광명AK플라자": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 광명소하": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 금정AK플라자": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 남양주": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 남양주현대아울렛스페이스원": { specialTheaters: ["Dolby Cinema", "COMFORT by MEGA"], region: "경기" },
+      "메가박스 대전": { specialTheaters: ["Dolby Atmos", "COMFORT by MEGA"], region: "대전" },
+      "메가박스 대전신세계": { specialTheaters: ["Dolby Cinema", "BOUTIQUE by MEGA", "COMFORT by MEGA"], region: "대전" },
+      "메가박스 더부티크목동현대백화점": { specialTheaters: ["BOUTIQUE by MEGA", "COMFORT by MEGA"], region: "서울" },
+      "메가박스 동대문": { specialTheaters: ["COMFORT by MEGA"], region: "서울" },
+      "메가박스 동탄": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 동탄역": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 미사강변(하남종합운동장)": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 백석벨라시타": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 별내": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 부산대": { specialTheaters: ["COMFORT by MEGA"], region: "부산" },
+      "메가박스 사상": { specialTheaters: ["COMFORT by MEGA"], region: "부산" },
+      "메가박스 상봉": { specialTheaters: ["COMFORT by MEGA"], region: "서울" },
+      "메가박스 상암월드컵경기장": { specialTheaters: ["Dolby Atmos", "COMFORT by MEGA"], region: "서울" },
+      "메가박스 서면": { specialTheaters: ["COMFORT by MEGA"], region: "부산" },
+      "메가박스 세종": { specialTheaters: ["COMFORT by MEGA"], region: "세종" },
+      "메가박스 송도(트리플스트리트)": { specialTheaters: ["Dolby Cinema", "BALCONY", "COMFORT by MEGA"], region: "인천" },
+      "메가박스 수원": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 수원AK플라자(수원역)": { specialTheaters: ["Dolby Cinema", "MX4D", "COMFORT by MEGA"], region: "경기" },
+      "메가박스 수원남문": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 수원스타필드": { specialTheaters: ["Dolby Atmos", "COMFORT by MEGA"], region: "경기" },
+      "메가박스 수원인계": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 수원호매실": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 시흥배곧": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 신촌": { specialTheaters: ["COMFORT by MEGA"], region: "서울" },
+      "메가박스 양산": { specialTheaters: ["COMFORT by MEGA"], region: "경남" },
+      "메가박스 울산": { specialTheaters: ["COMFORT by MEGA"], region: "울산" },
+      "메가박스 원주혁신": { specialTheaters: ["Dolby Atmos", "COMFORT by MEGA"], region: "강원" },
+      "메가박스 의정부민락": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 인천논현": { specialTheaters: ["COMFORT by MEGA"], region: "인천" },
+      "메가박스 전주혁신": { specialTheaters: ["Dolby Atmos", "COMFORT by MEGA"], region: "전북" },
+      "메가박스 제주": { specialTheaters: ["COMFORT by MEGA"], region: "제주" },
+      "메가박스 창원": { specialTheaters: ["COMFORT by MEGA"], region: "경남" },
+      "메가박스 천안": { specialTheaters: ["COMFORT by MEGA"], region: "충남" },
+      "메가박스 청라지젤(휴관)": { specialTheaters: ["COMFORT by MEGA"], region: "인천" },
+      "메가박스 청주사창": { specialTheaters: ["COMFORT by MEGA"], region: "충북" },
+      "메가박스 춘천": { specialTheaters: ["COMFORT by MEGA"], region: "강원" },
+      "메가박스 킨텍스": { specialTheaters: ["BOUTIQUE by MEGA", "COMFORT by MEGA"], region: "경기" },
+      "메가박스 파주금촌": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 평택비전": { specialTheaters: ["COMFORT by MEGA"], region: "경기" },
+      "메가박스 포항": { specialTheaters: ["Dolby Atmos", "COMFORT by MEGA"], region: "경북" },
+      "메가박스 해운대(장산)": { specialTheaters: ["COMFORT by MEGA"], region: "부산" },
+      "메가박스 화곡": { specialTheaters: ["COMFORT by MEGA"], region: "서울" },
+      "메가박스 화명": { specialTheaters: ["COMFORT by MEGA"], region: "부산" }
+    };
+    
+    console.log('특별관 데이터 직접 설정됨:', specialHallsData);
+
+    // 전국 메가박스 지점 데이터 (지오코딩 완료된 데이터)
+    const branches = [
+      // 수도권 (60개)
+      // 서울 지점 (22개)
+      { "name": "메가박스 강남", "address": "서울특별시 서초구 서초대로 77길 3 (서초동) 아라타워 8층", "lat": 37.498213939825, "lng": 127.02655197603 },
+      { "name": "메가박스 강동", "address": "서울특별시 강동구 천호대로 1007 (성내동)", "lat": 37.5301, "lng": 127.1234 },
+      { "name": "메가박스 구의이스트폴", "address": "서울특별시 광진구 아차산로 92 (구의동)", "lat": 37.5401, "lng": 127.0892 },
+      { "name": "메가박스 군자", "address": "서울특별시 광진구 능동로 110 (군자동)", "lat": 37.5571, "lng": 127.0795 },
+      { "name": "메가박스 더부티크목동현대백화점", "address": "서울특별시 양천구 목동중앙로 200 (목동) 현대백화점 목동점", "lat": 37.5263, "lng": 126.8751 },
+      { "name": "메가박스 동대문", "address": "서울특별시 중구 장충단로 247 (을지로6가) 굿모닝시티 9층", "lat": 37.5651, "lng": 127.0079 },
+      { "name": "메가박스 마곡", "address": "서울특별시 강서구 마곡중앙로 161 (마곡동)", "lat": 37.5598, "lng": 126.8315 },
+      { "name": "메가박스 목동", "address": "서울특별시 양천구 목동로 257 (목동)", "lat": 37.5263, "lng": 126.8751 },
+      { "name": "메가박스 상봉", "address": "서울특별시 중랑구 상봉로 131 (상봉동)", "lat": 37.5963, "lng": 127.0851 },
+      { "name": "메가박스 상암월드컵경기장", "address": "서울특별시 마포구 월드컵로 240 (성산동)", "lat": 37.569648162, "lng": 126.899078322 },
+      { "name": "메가박스 성수", "address": "서울특별시 성동구 왕십리로 83-21 (성수동)", "lat": 37.5445, "lng": 127.0556 },
+      { "name": "메가박스 센트럴", "address": "서울특별시 서초구 신반포로 176 (반포동) 센트럴시티", "lat": 37.5047, "lng": 127.0049 },
+      { "name": "메가박스 송파파크하비오", "address": "서울특별시 송파구 올림픽로 300 (신천동) 파크하비오", "lat": 37.5147, "lng": 127.1052 },
+      { "name": "메가박스 신촌", "address": "서울특별시 서대문구 신촌역로 30 (신촌동) 신촌민자역사 5층", "lat": 37.5551, "lng": 126.9368 },
+      { "name": "메가박스 이수", "address": "서울특별시 동작구 동작대로 89 (사당동)", "lat": 37.4863, "lng": 126.9814 },
+      { "name": "메가박스 창동", "address": "서울특별시 도봉구 노해로 403 (창동)", "lat": 37.6531, "lng": 127.0476 },
+      { "name": "메가박스 코엑스", "address": "서울특별시 강남구 봉은사로 524 (삼성동) 코엑스몰 지하2층", "lat": 37.5119, "lng": 127.0589 },
+      { "name": "메가박스 픽쳐하우스", "address": "서울특별시 강남구 테헤란로 152 (역삼동)", "lat": 37.5001, "lng": 127.0364 },
+      { "name": "메가박스 홍대", "address": "서울특별시 마포구 양화로 147 (동교동) 아일렉스 7층", "lat": 37.5563, "lng": 126.9226 },
+      { "name": "메가박스 화곡", "address": "서울특별시 강서구 화곡로 373 (화곡동)", "lat": 37.5418, "lng": 126.8403 },
+      { "name": "메가박스 ARTNINE", "address": "서울특별시 강남구 테헤란로 152 (역삼동)", "lat": 37.5001, "lng": 127.0364 },
+      
+      // 경기 지점 (31개)
+      { "name": "메가박스 고양스타필드", "address": "경기도 고양시 덕양구 고양대로 1955 (삼송동) 스타필드 고양", "lat": 37.6581, "lng": 126.8321 },
+      { "name": "메가박스 광명AK플라자", "address": "경기도 광명시 일직로 17 (일직동) AK플라자 광명점", "lat": 37.4163, "lng": 126.8847 },
+      { "name": "메가박스 광명소하", "address": "경기도 광명시 소하로 138 (소하동)", "lat": 37.4398, "lng": 126.8831 },
+      { "name": "메가박스 금정AK플라자", "address": "경기도 안양시 동안구 시민대로 285 (관양동) AK플라자 안양점", "lat": 37.3947, "lng": 126.9563 },
+      { "name": "메가박스 김포한강신도시", "address": "경기도 김포시 김포한강9로 76 (장기동)", "lat": 37.6401, "lng": 126.6234 },
+      { "name": "메가박스 남양주", "address": "경기도 남양주시 경춘로 925 (금곡동)", "lat": 37.6314, "lng": 127.2036 },
+      { "name": "메가박스 남양주현대아울렛스페이스원", "address": "경기도 남양주시 다산중앙로 123 (다산동) 현대아울렛 스페이스원", "lat": 37.6101, "lng": 127.1614 },
+      { "name": "메가박스 동탄", "address": "경기도 화성시 동탄순환대로 160 (반송동)", "lat": 37.1998, "lng": 127.0701 },
+      { "name": "메가박스 동탄역", "address": "경기도 화성시 동탄순환대로 160 (반송동)", "lat": 37.2014, "lng": 127.0723 },
+      { "name": "메가박스 미사강변(하남종합운동장)", "address": "경기도 하남시 미사대로 520 (선동) 하남종합운동장", "lat": 37.5498, "lng": 127.2036 },
+      { "name": "메가박스 백석벨라시타", "address": "경기도 고양시 일산동구 중앙로 1200 (백석동) 벨라시타", "lat": 37.6436, "lng": 126.7878 },
+      { "name": "메가박스 별내", "address": "경기도 남양주시 별내면 청학로 155", "lat": 37.6614, "lng": 127.1234 },
+      { "name": "메가박스 부천스타필드시티", "address": "경기도 부천시 원미구 길주로 210 (상동) 스타필드시티 부천", "lat": 37.5051, "lng": 126.7563 },
+      { "name": "메가박스 분당", "address": "경기도 성남시 분당구 판교역로 166 (백현동)", "lat": 37.3836, "lng": 127.1114 },
+      { "name": "메가박스 성남모란", "address": "경기도 성남시 수정구 수정로 201 (신흥동)", "lat": 37.4323, "lng": 127.1298 },
+      { "name": "메가박스 수원", "address": "경기도 수원시 영통구 월드컵로 206 (원천동)", "lat": 37.2636, "lng": 127.0286 },
+      { "name": "메가박스 수원AK플라자(수원역)", "address": "경기도 수원시 팔달구 중부대로 69 (매산동) AK플라자 수원점", "lat": 37.2651, "lng": 127.0001 },
+      { "name": "메가박스 수원남문", "address": "경기도 수원시 팔달구 정조로 800 (남수동)", "lat": 37.2801, "lng": 127.0151 },
+      { "name": "메가박스 수원스타필드", "address": "경기도 수원시 영통구 월드컵로 206 (원천동) 스타필드 수원", "lat": 37.2636, "lng": 127.0286 },
+      { "name": "메가박스 수원인계", "address": "경기도 수원시 영통구 인계로 166 (인계동)", "lat": 37.2563, "lng": 127.0314 },
+      { "name": "메가박스 수원호매실", "address": "경기도 수원시 영통구 호매실로 58 (호매실동)", "lat": 37.2636, "lng": 127.0286 },
+      { "name": "메가박스 시흥배곧", "address": "경기도 시흥시 배곧로 100 (정왕동)", "lat": 37.3698, "lng": 126.7314 },
+      { "name": "메가박스 시흥정왕", "address": "경기도 시흥시 정왕로 233 (정왕동)", "lat": 37.3498, "lng": 126.7314 },
+      { "name": "메가박스 안산중앙", "address": "경기도 안산시 단원구 중앙대로 1234 (고잔동)", "lat": 37.3163, "lng": 126.8314 },
+      { "name": "메가박스 안성스타필드", "address": "경기도 안성시 공도읍 공도로 123 (공도동) 스타필드 안성", "lat": 37.0163, "lng": 127.0814 },
+      { "name": "메가박스 용인테크노밸리", "address": "경기도 용인시 기흥구 용구대로 2234 (구갈동)", "lat": 37.2801, "lng": 127.1151 },
+      { "name": "메가박스 의정부민락", "address": "경기도 의정부시 민락로 123 (민락동)", "lat": 37.7436, "lng": 127.0951 },
+      { "name": "메가박스 킨텍스", "address": "경기도 고양시 일산서구 킨텍스로 217-60 (대화동) 킨텍스", "lat": 37.6701, "lng": 126.7463 },
+      { "name": "메가박스 파주금촌", "address": "경기도 파주시 중앙로 123 (금촌동)", "lat": 37.7601, "lng": 126.7736 },
+      { "name": "메가박스 파주운정", "address": "경기도 파주시 청암로 123 (운정동)", "lat": 37.7263, "lng": 126.7463 },
+      { "name": "메가박스 평택비전", "address": "경기도 평택시 비전로 123 (비전동)", "lat": 36.9901, "lng": 127.0951 },
+      { "name": "메가박스 하남스타필드", "address": "경기도 하남시 미사대로 750 (선동) 스타필드 하남", "lat": 37.5498, "lng": 127.2036 },
+      
+      // 인천 지점 (7개)
+      { "name": "메가박스 검단", "address": "인천광역시 서구 검단로 123 (검단동)", "lat": 37.6101, "lng": 126.6563 },
+      { "name": "메가박스 송도(트리플스트리트)", "address": "인천광역시 연수구 컨벤시아대로 165 (송도동) 트리플스트리트", "lat": 37.3836, "lng": 126.6563 },
+      { "name": "메가박스 영종", "address": "인천광역시 중구 공항로 123 (운서동)", "lat": 37.4901, "lng": 126.4901 },
+      { "name": "메가박스 영종하늘도시", "address": "인천광역시 중구 하늘도시로 123 (운서동)", "lat": 37.4901, "lng": 126.4901 },
+      { "name": "메가박스 인천논현", "address": "인천광역시 남동구 논현로 123 (논현동)", "lat": 37.4001, "lng": 126.7236 },
+      { "name": "메가박스 인천학익(시티오씨엘)", "address": "인천광역시 미추홀구 학익로 123 (학익동) 시티오씨엘", "lat": 37.4401, "lng": 126.6563 },
+      { "name": "메가박스 청라지젤(휴관)", "address": "인천광역시 서구 청라컨벤시아대로 123 (청라동) 지젤", "lat": 37.5301, "lng": 126.6563 },
+
+      // 대전/충청/세종 지점 (17개)
+      { "name": "메가박스 대전", "address": "대전광역시 서구 둔산로 100 (둔산동)", "lat": 36.3511, "lng": 127.3850 },
+      { "name": "메가박스 둔산", "address": "대전광역시 서구 둔산로 100 (둔산동)", "lat": 36.3511, "lng": 127.3850 },
+      { "name": "메가박스 유성", "address": "대전광역시 유성구 대학로 291 (궁동)", "lat": 36.3624, "lng": 127.3447 },
+      { "name": "메가박스 대전신세계", "address": "대전광역시 중구 중앙로 101 (은행동) 신세계백화점 대전점", "lat": 36.3257, "lng": 127.4200 },
+      { "name": "메가박스 세종", "address": "세종특별자치시 한누리대로 2130 (나성동)", "lat": 36.4800, "lng": 127.2890 },
+      { "name": "메가박스 세종나성", "address": "세종특별자치시 한누리대로 2130 (나성동)", "lat": 36.4800, "lng": 127.2890 },
+      { "name": "메가박스 청주", "address": "충청북도 청주시 상당구 상당로 82 (북문로3가)", "lat": 36.6424, "lng": 127.4890 },
+      { "name": "메가박스 청주사창", "address": "충청북도 청주시 상당구 사창동", "lat": 36.6424, "lng": 127.4890 },
+      { "name": "메가박스 충주", "address": "충청북도 충주시 중앙로 200 (교현동)", "lat": 36.9700, "lng": 127.9300 },
+      { "name": "메가박스 공주", "address": "충청남도 공주시 신관로 69 (신관동)", "lat": 36.4464, "lng": 127.1190 },
+      { "name": "메가박스 논산", "address": "충청남도 논산시 시민로 123 (내동)", "lat": 36.1870, "lng": 127.0980 },
+      { "name": "메가박스 천안", "address": "충청남도 천안시 동남구 신부동", "lat": 36.8150, "lng": 127.1139 },
+      { "name": "메가박스 아산", "address": "충청남도 아산시 신창면 순천향로 22", "lat": 36.7840, "lng": 127.0040 },
+      { "name": "메가박스 서산", "address": "충청남도 서산시 동문동", "lat": 36.7840, "lng": 126.4500 },
+      { "name": "메가박스 홍성", "address": "충청남도 홍성군 홍성읍", "lat": 36.6000, "lng": 126.6600 },
+      { "name": "메가박스 제천", "address": "충청북도 제천시 의림대로 82", "lat": 37.1330, "lng": 128.2110 },
+      { "name": "메가박스 보은", "address": "충청북도 보은군 보은읍", "lat": 36.4900, "lng": 127.7300 },
+
+      // 부산/대구/경상 지점 (18개)
+      { "name": "메가박스 부산대", "address": "부산광역시 금정구 부산대학로 63번길 2 (장전동)", "lat": 35.2330, "lng": 129.0830 },
+      { "name": "메가박스 해운대(장산)", "address": "부산광역시 해운대구 해운대로 265 (우동)", "lat": 35.1580, "lng": 129.1600 },
+      { "name": "메가박스 부산센텀", "address": "부산광역시 해운대구 센텀중앙로 35 (우동) 센텀시티", "lat": 35.1680, "lng": 129.1300 },
+      { "name": "메가박스 사상", "address": "부산광역시 사상구 낙동대로 1500 (삼락동)", "lat": 35.1700, "lng": 128.9900 },
+      { "name": "메가박스 서면", "address": "부산광역시 부산진구 중앙대로 680 (부전동)", "lat": 35.1570, "lng": 129.0570 },
+      { "name": "메가박스 대구", "address": "대구광역시 중구 동성로 149 (동성로2가)", "lat": 35.8700, "lng": 128.5950 },
+      { "name": "메가박스 대구이시아", "address": "대구광역시 동구 동부로 149 (신암동) 이시아폴리스", "lat": 35.8700, "lng": 128.7000 },
+      { "name": "메가박스 포항", "address": "경상북도 포항시 남구 대잠동", "lat": 36.0190, "lng": 129.3430 },
+      { "name": "메가박스 진주중안", "address": "경상남도 진주시 중안동", "lat": 35.1800, "lng": 128.1070 },
+      { "name": "메가박스 창원", "address": "경상남도 창원시 의창구 원이대로 362 (소답동)", "lat": 35.2280, "lng": 128.6810 },
+      { "name": "메가박스 김해", "address": "경상남도 김해시 장유면", "lat": 35.2300, "lng": 128.8800 },
+      { "name": "메가박스 마산", "address": "경상남도 창원시 마산합포구", "lat": 35.2000, "lng": 128.5700 },
+      { "name": "메가박스 양산", "address": "경상남도 양산시 중앙동", "lat": 35.3380, "lng": 129.0300 },
+      { "name": "메가박스 경산", "address": "경상북도 경산시 중방동", "lat": 35.8200, "lng": 128.7400 },
+      { "name": "메가박스 구미강동", "address": "경상북도 구미시 강동동", "lat": 36.1200, "lng": 128.3400 },
+      { "name": "메가박스 김천혁신", "address": "경상북도 김천시 혁신동", "lat": 36.1400, "lng": 128.1100 },
+      { "name": "메가박스 안동", "address": "경상북도 안동시 태화동", "lat": 36.5680, "lng": 128.7290 },
+      { "name": "메가박스 경주", "address": "경상북도 경주시 동천동", "lat": 35.8560, "lng": 129.2240 },
+
+      // 광주/전라 지점 (9개)
+      { "name": "메가박스 광주상무", "address": "광주광역시 서구 상무대로 1495 (치평동)", "lat": 35.1500, "lng": 126.8900 },
+      { "name": "메가박스 광주하남", "address": "광주광역시 남구 하남동", "lat": 35.1300, "lng": 126.9000 },
+      { "name": "메가박스 전주", "address": "전라북도 전주시 완산구 전주객사3길 10 (효자동)", "lat": 35.8240, "lng": 127.1480 },
+      { "name": "메가박스 전주혁신", "address": "전라북도 전주시 덕진구 혁신동", "lat": 35.8240, "lng": 127.1480 },
+      { "name": "메가박스 군산", "address": "전라북도 군산시 수송동", "lat": 35.9670, "lng": 126.7360 },
+      { "name": "메가박스 익산", "address": "전라북도 익산시 인북동", "lat": 35.9400, "lng": 126.9540 },
+      { "name": "메가박스 목포하당", "address": "전라남도 목포시 하당동", "lat": 34.8080, "lng": 126.3950 },
+      { "name": "메가박스 여수웅천", "address": "전라남도 여수시 웅천동", "lat": 34.7600, "lng": 127.6620 },
+      { "name": "메가박스 순천신대", "address": "전라남도 순천시 신대동", "lat": 34.9500, "lng": 127.5200 },
+
+      // 강원 지점 (4개)
+      { "name": "메가박스 원주", "address": "강원도 원주시 일산동", "lat": 37.3440, "lng": 127.9200 },
+      { "name": "메가박스 원주센트럴", "address": "강원도 원주시 일산동", "lat": 37.3440, "lng": 127.9200 },
+      { "name": "메가박스 춘천", "address": "강원도 춘천시 중앙로 201 (중앙로2가)", "lat": 37.8810, "lng": 127.7300 },
+      { "name": "메가박스 속초", "address": "강원도 속초시 중앙로 184 (교동)", "lat": 38.2070, "lng": 128.5910 },
+
+      // 제주 지점 (3개)
+      { "name": "메가박스 제주", "address": "제주특별자치도 제주시 연동", "lat": 33.4990, "lng": 126.5310 },
+      { "name": "메가박스 제주아라", "address": "제주특별자치도 제주시 아라동", "lat": 33.4990, "lng": 126.5310 },
+      { "name": "메가박스 서귀포", "address": "제주특별자치도 서귀포시 중앙로 264 (서귀동)", "lat": 33.2500, "lng": 126.5600 }
+    ];
+
+    // Map init (전국 중심) - OpenFreeMap vector basemap + MapLibre GL
+    const MEGABOX_ICON_DATA = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAQEBAQFBAUGBgUHCAcIBwoKCQkKChALDAsMCxAYDxEPDxEPGBUZFRMVGRUmHhoaHiYsJSMlLDUvLzVDP0NXV3X/2wBDAQQEBAQFBAUGBgUHCAcIBwoKCQkKChALDAsMCxAYDxEPDxEPGBUZFRMVGRUmHhoaHiYsJSMlLDUvLzVDP0NXV3X/wAARCAIAAgADASIAAhEBAxEB/8QAHQABAAIDAAMBAAAAAAAAAAAAAAgJAQYHAgQFA//EAFIQAAECAwMGCAwBBwsCBwAAAAABAgMEBQYHEQghMTZ1sxIYN0FRdJSyExcyNFVWcXOT0dLTgRQiQlNhkeIVFiMkNVSSobHB4VJiJSZjZXKiwv/EABwBAQADAAMBAQAAAAAAAAAAAAAFBgcDBAgCAf/EAEcRAAEDAgEECRAJBQEBAAAAAAABAgMEBREGEjFyITI0NUFRU7HRBxMUFRciM1JVYXFzdJGSoRY2QlSBk7LB0iMlguHwYiT/2gAMAwEAAhEDEQA/AI+gA9WF4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP0hwokSIyGxjnvcqI1rUVVcqrgiIiZ1VVzYIbe27u3zkRUstVsFT+6RU//J+NgURbdWVRUTPWZHfNLT0RERMyYYFEyryrqrNVU8UNOxyPjVyq5V48OAjK6ufTuY1qY4lW/i5t/wCqtX7JE+Q8XNv/AFVq/ZInyLSsE6BgnQVTuk3T7pB8+k6XbiXk2lWvi5t/6q1fskT5Dxc2/wDVWr9kifItKwToGCdCDuk3T7pB8+kduJeTaVa+Lm3/AKq1fskT5Dxc2/8AVWr9kifItKwToGCdA7pN0+6QfPpHbiXk2lTVWs7X6OsJKlSpyU8Jj4Pw8F0JH4YY4K5Exwxz4aD5ktC8NHhQuFweHEa3HThiqJjh+JNTKkREs3Qlwz/yg7dqQxp3n8n7+H3jRbDeJrnZkqnsayReubDdHeqqErTTump0eqYE6WZNFgOA3GYqargmK+HZnXp8g/Ti0Xffrqn8dv0EhG+SnsPIw9cpL9iv9xqPjUri1lTj4VxFK2OT3Yyl2UrdQlJioJMSkjHmGcOK1zVWC1X4KiNTFFwwIt2Ds/LWhtfR6VMRIjIM1H4ER0PBHo1EVy4K5FRFXDDFSx28XUC1exZ7cuIA3Ncptmusu7ji/wCSl2uNRY71JLUve+Jiujc5cVauaqkrRTzPpahzn4q3a+4lZxaLvv11T+O36BxaLvv11T+O36CQwM/+kd98o1HxqRPZlTyriLVp8naxMjZ6rTkrMVFsaXk40WGrorXN4UNquRFTg6FVM/PgQlLWLap/5QtBsya3alU5p3U+uNdWQV3ZFQ+VWObm5y44YopNWuaWVr1e/HAGw0uyVqatLrMU+iVCago5W+Egy73sxTSmLUVMU50NeLFrgGp4q6IuGmJN4/HeT2VN8ns9BHPFEx7nSozB3nRVx+R2a2pWniRzUx77Ag74ubf+qtX7JE+Q8XNv/VWr9kifItKwToGCdBn/AHSbp90g+fSRfbiXk2lWvi5t/wCqtX7JE+Q8XNv/AFVq/ZInyLSsE6BgnQO6TdPukHz6R24l5NpVr4ubf+qtX7JE+Q8XNv8A1Vq/ZInyLSsE6BgnQO6TdPukHz6R24l5NpVr4ubf+qtX7JE+Q8XNvvVar9kifItKwToGCdA7pN0+6QfPpHbeXk2lRk9ITshNRJaclY0vHh4I+FFYsN7cUxRFa5EVMy45z1DuGUMiJebPoiJ5tLdw4eavaqx1bbqSpc1EdLE16tTgxTEm4H9ciY9eFpJ25y5yzFr7Mx6lUo84kVJyJCa2E9rGo1jWrzo5VVcdPQdc4tF3v66p/Hb9AyaOT2NtOP3WEheYxO/3+8xXmujjrpmMbM5rWtdsIhXaurqG1EjWyOREcR64tN3v66p/Hb9Byy965ey1k7JrVKbHnFismYTHNjRGvarX5l0NTOi58SbBwbKN5No/XZfvH5Yr/epbzQMkr5nMdO1HNc7YVFUUtXUOqImrK7BXFfQAN8LOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbbYDXyym2pHfNLUU0J7Cq6wGvllNtSO+aWopoT2GM9UnfOk9QvOV+8eFj1TyMGT5NZqkvSaVP1CYR6wZWWix4iNTF3AhNV64IuGK4JmM5ajnOa1ExVSIRFVcEPqmCPXGXu9/U1P4DfrN2sNexZm2c7NSlMhzbYkCEkR/hoaMTgquGZUVcVJSeyXenhdLLRTMYmlzmqiIcz6WoY1XOiciHUQARZwEW8qXVqhbQdu1IX07z+T9/D7xNHKl1aoW0HbtSF1O8/k/fw+8bnkR9Vm60vOpZrduNPQ4tzb5KewyYb5KewyYaukrS6TSrxtQLV7Gndy4gDc1ym2a6y7uOJ/XjagWr2NO7lxAG5rlNs11l3ccaRkb9X8oPVr+lSYt+46n0LzFmYAM2IY1i2mp9odmTW7UqmLWbaan2h2ZNbtSqY1vqZ+BuGvHzKT9m2kus0FjGT/wAldD/+c3v3lc5La6i+2yFmbFSNJqLJxseXiRsVhw0e1yRIixEVM6L+lzk3l5Q1lZaIY6eB8j0qGuVrdlcM1UxOxc4pJIERrcVziZII/wDGSu56ah2f+IcZK7npqHZ/4jIvo7ffJ1R8CkB2HU8k73EgAR/4yV3PTUOz/wAQ4yV3PTUOz/xD6O33ydUfAo7DqeSd7jv5k4JL5Rd30eYgwWfl/CiRGsbjAwzuXBMc/wC070i4pidGst9dRqxKinfFn7XObhjhpOOSKWPDPZhieQAOocZXjlD8p0/1aW7hw07llD8p0/1aW7hw09I5Nbw232ZnMhb6Tc0WqnMT5yaOT6NtOP3WEhiPOTRyfRtpx+6wkMYRlHv7cfaHlZrd1S6w5zg2Udyax+uy/eO885wbKO5NY/XZfvHzk9v5bvaI+cUe6otdCvkAHpQt4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABttgNfLKbakd80tRTQnsKrrAa+WU21I75paimhPYYz1Sd86T1C85X7x4WPVM85pd42oFq9jT25cbpzml3jagWr2NPblxQaPdVP6xvORcXhY9ZCrQlBkuaz1zZ7N4hF8lBkuaz1zZ7N4hveWH1ZrdVn6kLPX7kk/wC4ScAAPPhVCLmVLq1QtoO3akLqd5/J+/h94mjlS6tULaDt2pC6nefyfv4feNzyI+qzdaXnUs1t3GnocW5t8lPYZMN8lPYZMNXSVpdJpV42oFq9jTu5cQBua5TbNdZd3HE/rxtQLV7Gndy4gDc1ym2a6y7uONIyN+r+UHq1/SpMW/cdT6F5izMAGbEMaxbTU+0OzJrdqVTFrNtNT7Q7Mmt2pVMa31M/AXDXj5lJ+zbSXWaAAaiTIAAAAAB9Kjf2xTutwe+hbYzyU9iFSdG/tindbg99C2xnkp7DI+qZ4e26kn7EDedMP4/seQAMvIUrxyh+U6f6tLdw4adyyh+U6f6tLdw4aekcmt4bb7MzmQuFJuaLVbzE+cmjk+jbTj91hIYjzk0cn0bacfusJDGEZR7+3H2h5WK3dUusOc4NlHcmsfrsv3jvPOcGyjuTWP12X7x85Pb+W72iPnFHuqLXQr5AB6ULeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbbYDXyym2pHfNLUU0J7Cq6wGvllNtSO+aWopoT2GM9UnfOk9QvOV+8eFj1TPOaXeNqBavY09uXG6c5pd42oFq9jT25cUGj3VT+sZzkXF4WPWQq0JQZLms9c2ezeIRfJQZLms9c2ezeIb3lh9Wa3VZ+pCz1+5JP+4ScAAPPhVCLeVJq1QtoO3akL6d5/J+/h94suvEu7ptuJCTlJybmIDJeOsVqweDiqq1W4LwkVMM5yqBkxWTgx4URKxU1Vj0cmKwsMUXH/oNPyZyrtFvsiUs73pKiybVqrtlXAmqOugipkY5dnZJNN8lPYZMImCIhkzAhTSrxtQLV7Gndy4gDc1ym2a6y7uOJ/XjagWr2NO7lxAG5rlNs11l3ccaTkb9X8oPVr+lSZt+46n0LzFmYAM2IY1i2mp9odmTW7UqmLWbaan2h2ZNbtSqY1vqZ+AuGvHzKT9m2kus0AA1EmQAAAAAD6VG/tindbg99C2xnkp7CpOjf2xTutwe+hbYzyU9hkfVN8PbdST9iBvOmH8f2PIAGXkKV45Q/KdP9Wlu4cNO5ZQ/KdP9Wlu4cNPSOTW8Nt9mZzIXCk3NFqt5ifOTRyfRtpx+6wkMR5yaOT6NtOP3WEhjCMo9/rj7Q8rFbuqXWMc5wfKO5NY/XZfvHeDl17lkatayx0WmU90FI7piFETwrla3Bi4rnRFznBY5ooLvQyyPzWMnY5zl4ExPmmcjaiNzl2EchWkCQXFqvE/W0v47/oHFqvE/W0z47/oN5+lWT3lCH3ln7NpeVaR9BsNqLM1SzNbmaVUGsSYg8HhcB3Ca5HpwkVFzZlx50xNeJuKaOaKOSN2cx7c5rm6FRdCnZa5HI1zdCgAHKfoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABttgNfLKbakd80tRTQnsKrrAa+WU21I75paimhPYYz1Sd86T1C85X7x4WPVM85pd42oFq9jT25cbpzml3jagWr2NPblxQaPdVP6xnORcXhY9ZCrQlBkuaz1zZ7N4hF8lBkuaz1zZ7N4hveWH1ZrdVn6kLPX7kk/wC4ScAAPPhVAAAAAADSrxtQLV7Gndy4gDc1ym2a6y7uOJ/XjagWr2NO7lxAG5rlNs11l3ccaTkb9X8oPVr+lSZt+46n0LzFmYAM2IY1i2mp9odmTW7UqmLWbaan2h2ZNbtSqY1vqZ+AuGvHzKT9m2kus0AA1EmQAAAAADYLJyjpy1NDlmpisWoyzMNPlREQteTQnsK+cnqysSr26hT72Yy1MYsZ64ZliuRWw249OlyewsH0GK9UasZLdYIGuxWGLvvM5y6PchXbtIjpmNT7LecyAOYz0iSuzKEejrz6kifoy8sn4+DRf9ziR0++eebO3nWkitXFGzDYX4wYbYap+9DmB6VsEassluaulKWL9KFxpUwp4k/8pzE+cmjk+jbTj91hIYjzk0cn0bacfusJDGCZR7+3H2h5V63dUusZABCnWAAAK6soPlRqvuZXdIcUO15QfKjVfcyu6Q4oeksnN4bZ7LF+lC4Um5odVOYAAmjsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAG22A18sptqR3zS1FNCewqusBr5ZTbUjvmlqKaE9hjPVJ3zpPULzlfvHhY9Uzzml3jagWr2NPblxunOaXeNqBavY09uXFBo91U/rGc5FxeFj1kKtCUGS5rPXNns3iEXyUGS5rPXNns3iG95YfVmt1WfqQs9fuST/uEnAADz4VQ4Tfpbm0NkaLS5mkxocOLHnFhvV8NHpwUYrsyL+1CN0nlBXlxZuXhvnpVWvitav9XYmZVwU7HlS6tULaDt2pC+nefyfv4feNhyRs9qqcnWyz0kT5M6TvnMRV2FXhLBQU8L6RHOY1V2eAtzboT2GTDfJT2GTHlK+uk0q8bUC1exp3cuIA3Ncptmusu7jif142oFq9jTu5cQBua5TbNdZd3HGk5G/V/KD1a/pUmbfuOp9C8xZmADNiGNYtpqfaHZk1u1Kpi1m2mp9odmTW7UqmNb6mfgLhrx8yk/ZtpLrNAANRJkAAAHvUymztTqErIycF0WYjxWw4bEz8JzlwRP2Jzqq5kTOp6JOe4W6taJItr9Ul8KhMw/6tDdpl4L00r0PemnoTN0kBlFfILRb3yuVFkcmbE3jXoQ6tXUtgizl232Tq929h5OxtmZenw+C6O5PCTMVEw8JFdpX2JoROg6CAed6mplqZ5JpX5z3uznO86lTe9z3K52lTGY+ZV6nKUulzs9Mu4MCWgRIsRehrE4S/ifTwIlZSN4DYMsyy0nF/pIvAizytVF4LEXhMhr0K5URVTThh0nfstsludxgpmaHO75eJqaVOWmhdNM1ifj6CIdTno1QqM5Oxs8WZmIkZ/P8AnRHcJf8ANT0gD0rGxscbGNbg1qYFwaiI3BCfOTRyfRtpx+6wkMR5yaOT6NtOP3WEhjzhlHv9cfaHlRrd1S6xg0a8G2sCx1nn1WLKPmGtjQ4fg2ORqrw1wxxXHQb0cFyjuTaP1yX7x1rPTRVN0o4ZExY+VrXJjhsKp8UzGvnY1dCuNK41NK9Wpn47fkONRSvVqZ+O35ELwbV9BMm/uz/zHdJY+1lH4nzU3a8K1zbW2rnawkosu2MkNrYav4aokNqNRVXBM64Y4YZjSQC1U1NFTU8UESYMYxrWt07CbCHdYxGNa1uhAADnPoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA22wGvllNtSO+aWopoT2FV1gNfLKbakd80tRTQnsMZ6pO+dJ6hecr948LHqmec0u8bUC1exp7cuN05zS7xtQLV7Gnty4oNHuqn9YznIuLwseshVoSgyXNZ65s9m8Qi+SgyXNZ65s9m8Q3vLD6s1uoz9SFnr9ySf9wk4AAefCqEXMqXVqhbQdu1IXU7z+T9/D7xNHKl1aoW0HbtSF1O8/k/fw+8bnkR9Vm60vOpZrbuNPQ4tzb5KewyYb5KewyYaukrS6TSrxtQLV7Gndy4gDc1ym2a6y7uOJ/XjagWr2NO7lxAG5rlNs11l3ccaRkb9X8oPVr+lSYt+46n0LzFmYAM2IY1i2mp9odmTW7UqmLWbaan2h2ZNbtSqY1vqZ+AuGvHzKT9m2kus0AA1EmQASQuYuYiWgiwa1WoLmUtio6DBcios0qc6/wDpp/8AYjLrdaS2Uj5534NTQn2nLxJ5zhnnjhYrnLsH2LiboHVCJLWlrMH+qMXhSUu9MfDOTRFei/oIudqc659BNXMfnDhQ4TGsY1GsaiIjUTBERMyIiJzIfrnPPl7vNVda108y4JoY3gY3iKrU1D55c52jg8xkA+PXK1TaJS5qoT8dsGWl4ave9y8yaEROdV0IiaVIljHPe1rUxcq4I1OFTgRFVcETZNVvIt3I2Ms5Gn43BfMPVYcrBxzxIqoqoi4aGphi5egrRqdSnqpUJqenIzosxMRXRIr3aXOcuKr+xOhEzImg2+8a3tQtpaGLPxkdDl2IrJWBjmhQ8dC4aXO0uXn0Ggm+ZIZOMtNEj5W//TKmL/8AynA1P3LRQUnWIsV266egAAuB3yfOTRyfRtpx+6wkMR5yaOT6NtOP3WEhjzblHv7cfaHlQrd1S6w5zg2Udyax+uy/eO885wbKO5NY/XZfvHzk9v5bvaI+c/KPdUWuhXyAD0oXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA22wGvllNtSO+aWopoT2FV1gNfLKbakd80tRTQnsMZ6pO+dJ6j9yv3jwseqZNPt9Lx5iw9poEGE+JFiUmcYxjGq5z3OhORGoiZ1VVzIhuJ4qiGdxSLHKx6JjmuRfcuJENdmvR3EVVfzGtr6sVfsUb6SR+TdZ6vUy0dZiT9JnZVj5FrWujwHwmqvDRcEVyIirhzITF4KdCBERMcELtdcua24UEtI+lja17URXNVeBUX9iSnuTpYnMVmGPnPMAFHIwi5lS6tULaDt2pC6nefyfv4feJoZUurVC2g7dqQvp3n8n7+H3jc8iPqs3Wl51LNbdxp6HFubfJT2GTDfJT2GTDV0laXSaVeNqBavY07uXEAbmuU2zXWXdxxP68bUC1exp3cuIA3Ncptmusu7jjSMjfq/lB6tf0qTFv3HU+heYszABmxDGsW01PtDsya3alUxazbTU+0OzJrdqVTGt9TPwNw14+ZSes+0l1mgHmxj4j2taxXOc5EaiYqqqq4IiImlSbF0tw0Cl/k9YtFCZGnURHQZNcHMgLjijnqiqj3pzJoT9pdr5fqK0UvXJ1753g400vXzebjJGpqo4GYu+E0u564qJUHQa1aSWVkp+a+Xk3pg6NimPDiJpRnQ3SvPmJpw4bIbGsY1GtaiI1ETBERM2ZEP00IOcwS83utu1Us07thNpGm1Ynm6Sr1FTJO/Odo4uI8gD1Jqal5WWjTEeKyFChsc+I97ka1rWpiqqq5kRCJRFVUREOBNkxNTUvKy0aYmIrIUGExXve9Ua1rWpiqqq6EQr0vhvVmLZVP8klHOZSJWKvgW50WO9M3hXoufOnkpzJpPqXxXxzNq5h9LpkR8Kjw351ztdNOauZ7k0oxFTFrV9qnAjZMjckuxEZXVkf9ZdmKNfsJxr51LDb6Drf9SRO/+y3i/wBgAGkEuAAAT5yaOT6NtOP3WEhiPOTRyfRtpx+6wkMebco9/bj7Q8qFbuqXWHOcGyjuTWP12X7x3nnODZR3JrH67L94+cnt/Ld7RHzij3VFroV8gA9KFvAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANusBr5ZTbUjvmlqCaPwKnbNVODSrR0aoxWPfDlJ+Xjva3DhK2E9HqiYqiYqiZsScSZSV3WCf2h8D/kynL+1XKrr6V9PSyyNSFUVWtxw2SEukE0kjFYxy96SBBH/jJXc9NQ7P/EOMldz01Ds/8RQvo7ffJ1R8CkV2HU8k73EgAR/4yV3PTUOz/wAQ4yV3PTUOz/xD6O33ydUfAo7DqeSd7iQAI/8AGSu56ah2f+IcZK7npqHZ/wCIfR2++Tqj4FHYdTyTvca3lSat0LaDt2pDCnefyfv4feJBX3Xq2btlS6VKUtsyqwJl0V7osPgIicHBMM6qq5yPtO8/k/fw+8bFklSVVJk22OeJzH/1O9dsLpUsNDG5lGjXNwXvi3Nvkp7DJhvkp7DJgi6SrrpNKvG1AtXsad3LiANzXKbZrrLu44n9eNqBavY07uXEAbmuU2zXWXdxxpORv1fyg9Wv6VJi37jqfQvMWZgAzYhjWLaan2h2ZNbtSqYtZtpqfaDZk1u1KpjW+pn4G4a8fMpPWbaS6zT9IcSJDiMfDcrXscitci4KiouKKi8y4k/7mL3IFrJJtNqT2MrEBmdczUmWJ+mxOZyfpJ+KFfh7khPzlPnYE3KR3wZiC9Hw4jFwc1yLimClvyjyfp7zR5ju9lYmMcnEvQp36ulbUMwXT9lxbmDid0N7ErbOn/ks0rIVXl2IsaGmZIrUzeFYnQvOnMp0S1NraHZelRJ+qTjYUJuZrdL4juZjG6XOXoQwKptldT1zqR8Luv5+bmomOPFhxopV3wysl62rdk+zUajI02Rjzk5HZBl4LFfEiPXBrWppVVIEXu3yzdrorqdTViQKOx+fH8180qLmc9OZqKmLW/iprl5d69bttOcByulqbDcvgZRrscVRcz4i/pO/yQ5Sa3kpkWyi63V1rWvqNLWaUZ0qTtDbkjwfJt+b/YABohLAAAAAAE+cmjk+jbTj91hIYjzk0cnsbacfusJDHm3KPf64+0PKhW7ql1hznBso7k1j9dl+8d55zg2Udyax+uy/ePnJ7fy3e0R84o91Ra6FfIAPShbwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAe5TvP5P38PvHpn7QIqwY0KKiIqse1yY6FVFx/2OOZqrE9E4lPx21Ut3b5Kew8iLDMqSzvAZw6DPo7gpiiOYqY9CKqpin7T9ONLZr0FUP3w/meelySyixX+3v8Ae3pKotBVY+D5jt942oFq9jT25cQBub5TbNdZd3HHbbW5R1DrFmaxTZeizjYs5Jxpdr4j2I1vhmqzFeCqquGOOHORtsZaJLOWopVWWB4ZJWPw1hovBVyKitXBcFz4Lm/aXvJex3Sls14impnMkmjVsbVVO+71U4yTo6eZlNO1zMHO2vuLVs5ki5xpbNegqh++H8xxpbNegqh++H8yh/RPKL7hJ729JGdgVfJcx3y2mp9oNmTW7cVTkwbR5SdCqVBqclL0SdSLMysWC1YjmI1FiNVuK4Kq4Jj+JD40rIK03C3xVqVUDole5ubjhwIvETFrglia9HtwxAANAJQ+hS6pUaVPy87IzMSBMwXcKHFYuDmro/FFRcFRcyppPftDamv2jnUm6tUIk1GRvBarsEa1NODWtRGtz58x8AHA6mplnbMsLOutbg12amcicWOnA+MxmfnZvfAAHOfYAAAAAAAABPnJo5PY204/dYSFIGXT31UyxlnY9Mm6XMx1dNvjMfCVuGD2oiovCVM6KmlNJ1HjSWa9BVD98P5mF33Ji+z3itljonuY+ZzmuxTZRfxK1VUVS6okckewriURwbKO5No/XZfvGq8aSzXoKofvh/M5tenfhS7YWZ/kqTpUzBV0xDiPiRXNwRGZ8ERqriq/tPmx5MX2G70UslC9rGTNc52KbCIvpFLRVLZ43LFsI4jaADdiygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH6woTosWHDb5T3I1M+CYquCEl4eS9apzGK6tU5HKiYojYionTguCY+3AjfTvP5P38PvFuLfJT2IZ9lxf7napKJKWVrUkR+di1F0YYafSRVyqZoOtZjtOJCLiuWn9OU/8AwxPkYXJdtQiL/wCOU/8AwxPkTgMLoUof06yj+8t+BvQRfbOr8ZPchUnV6ZMUqrT9PjqnhZWZiQInB8lXQ3cFVT9iroPmm6Xja/Wp2vN7xTSzcqCZ89DTSv2z4Wud+KYlmiVXRtcv2mg6fdzdbWLc/wAouk5uXgQ5TwaPdF4SqromOCIjcdCNzqpzAmVkreY2p9/K915EZU3Cpt9knqKd2bI1WZuKY6XImj0KcFbK6Kne5ulMOc1Xiu2n9OU//DE+Q4rlp/TlP/wxPkTfBkn06yj+8t+BvQQHbOr8ZPchXBeDc1XLFUmBUJqflZiDEmGwcIfCRyOc1XIuCoiKmDf3nHyeeU3qDJbWg7uIQMNTyOutZcrSs1S9rpEmc3YTDQTlBM+aDOdpziV90Vy9kbU2Pg1WpPm1jxY8VuEOLwGtaxeCiImCqq5s6nUOLZd1/wC4do/4PcyduTKR61M99TuZld8v16ivFdGyvmaxs70a1HbCIikHU1VQ2okRJXYI5TgHFtu56Kh8f/g47fTdDZayFmpWo0x00kR09DgvbEicNqtexy44YIuKcEnDzEdMpzUCS2vB3cQ+8n79eZb1QxyV0zmPma1zXO2FQ+qSqqHVEbXSuVFcQMABvZZwAAAAAAAAASsuSunsfaiykxUatLRY0b8uiQm4Rnw2tYxrVTMxUxVVXFVUimT5yaOT2NtOP3WFMy6rKqlsqSQTvjf15jc5q4Lhs8KEfcpHsp8WuwXOQ+1xe7rvRUftUX6hxe7rvRUftUX6jtmYZjHe3978pVP5jukr3ZdVyrvepF28S5CwFJsXW6hISUaDMy0s6LDf4eI/O3Phg9VRUXQQiLO72OTi1Gz4v+hWIat1P66sq6CrWondIrZ0zVe5VXQnGTtqlkkhernY99wgAF/JQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA9ynefyfv4feLc2+SnsKjKd5/J+/h94tzb5KewyTqmeGtupL+xA3nTD+JkwuhTIMuIUqzvG1+tTteb3imllh9XuBsHVapO1CZ/LvDzUeJGicGPg3hxFxXBMMyZz53Ftu5x0VDtH/AAbLQ5fWWCjponNnzmRNa7BicCYcZYorpTNja1c7YbxEASZWSt5jaj38r3Xm68W27noqHaP+DoNh7urPWLhzrKX4fCacx0Twr+GuLEVEwzJhpIvKbLG1XK0T00LZUkerMM5ME71yLx+Y69ZcIJadzG52K4c50AAGXEKRyynNQJLa0HdxCBhPPKc1AktrQd3EIGG49TzeF3r3/sWa1bl/yUsMydeTKR61M99TuZwzJ15MpHrUz31O5mS5Q7+XH2mTnIGr3VNrKZI5ZTmoMltaDu4hI0jllOagyW1oO7iH3k3v9bvXs5z6ot1RayEDAAeki3AAAAAAAAAAnzk0cnsbacfusIDFgeTfKRYF28OI7yZiemIjPYipDX/NqlD6oioliYi8NQzmUjLsv/zf5Id9ABh5WjnV7PJxafZ8X/QrELQ7zZWLNXf2nhQ0VXrTY6oiJiq8FiuwT24FXhsPU1c3sGtbj33Xk5kLBZ1/ovT/ANAAGlkwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAe5TvP5P38PvFubfJT2FRlO8/k/fw+8W5t8lPYZJ1TfDW3Ul/Ygrzph/EyADLiEMD8DXI9rbLwI0SDGrlPhxWOVr2PmYbXNcmZUVFXFFQ8P562Q9YKZ2uF9RypTzqmKQye5T662/xVNmBrH89bIesFM7VC+o+nT6zSakkRZGflplGKiPWDFbERqroReCq4Yn46CZjcXRuRPOihWOTZVqn1QAcZ8kcspzUCS2tB3cQgYTzynNQJLa0HdxCBhuPU83hd69/7FmtW5f8lLDMnXkyketTPfU7mcMydeTKR61M99TuZkuUO/lx9pfzkDV7qm1lBpNubDUm2dIh06oxZhkJkw2MiwXI13Ca1WpncjkwwcbqCLhmlglZJG9WvYuLXJwHA1zmua5q4KhHPix2B/vtW+ND+2fHr+ThYqTodTmpeeqiRYEpFiw1fEhubwmNVUxRGJimOnDOSlNetZqxW9nzO7UnafKS+rPEi3GfDPb9vznbZWVKvb/VdpKoQAeimri1PQWtNCAAH0foAN5sHYCu2zq6ScgzgwmYLMTDkXwcFq869Krh+a3pOvVVdPSwPmmkayNmy5zj5e9rGuc52CIejY2x9ZtZW5em0+E5Ve5PCxcFVkGHjne9eZETQmlVLN7OUOToNEkKXKtVIMrAbDbjpXBM7lw51XOp8ixNiKJY+jw5CnQuh0aM5EWJGfhnc9U/yTQhuebFTB8qspn3moa1jc2ni2icLl8ZSsV1YtQ/BNon/YnkACpnQPxexr2Oa5MWuRUVF6FK2L1buJ+xlfjNbCe6mTERzpOPnVMFz+CcvM5ujPpTOWV858etUOl1umzEhUJaHHlorcHMemP4oulFTmVM6Fiyayhms1YsiNz4pMEkb6NCp50O5R1bqeTHS1dsVMg6/ejdJV7Fzr48JHzFIiP/AKGZ0rDx0Q4qJocnMuhTkBvtBcKWvpmT08ufG/h4vMvEqFoiljla1zXYoAAd05AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD3Kd5/J+/h94tzb5KewqMp3n8n7+H3i3Nvkp7DJOqb4a26kv7EFedMP4mTC6FMmF0KZcQiFWl42v9qtrze8U0s368SRnX29tQ5srGc1atNKioxVRU8IuhcDTf5OqH9zj/AA3fI9LWmSnS10WLo8esx8yFxhVnWmaNoh6ZMrJW8xtT7+V7ryIP8nVD+5x/hu+RMPJbl48GStOkWE9irGlcOE1W4/mv0YkBlw+FcnKpGubjns0a6HVuSt7Dfhhwc5LEAGEFYI5ZTmoEltaDu4hAwnnlOagSW1oO7iEDDcep5vC717/2LNaty/5KWGZOvJlI9ame+p3M4Zk68mUj1qZ76nczJcod/Lj7S/nIGr3VNrKADid+trLQWYshKztInFlph9QhQnP8GyJ+Y5j1VMIiOTSiZzoUVJLWVcNPGrUfI9Gtx0bPHhicUUaySNY3Sp2w1+1mrFb2fM7tSv7x8Xr+sS9llvtnqVC+m82oSUzKTNoHugx4T4cRqS8BiuY5OCqI5rEVMUXTpL1B1O72yaNzpqXBHNXbO49Uk22moR7VVW/M5YADaWpgiJ5ixIADsV1l0dVtpNpMRuHL0mE/CLMYYOiqmlkJFTBV6V0IdO4XClt9M+eolzI2fPzJxqccsscTVc5cEPk3bXY1q21T4MFroNPhPT8pm1TFrU08BmPlPVOZNBYdZiy1FszSINOpcq2DAZnVccXPcul73aVcp7tGotMotNl5CnyzIErBZwWQ2JgidKqulVVc6qudVPsGDZR5TVV4nwXvKdi95H+7uNSsVlbJUPw0MTQ3pMgArJ0jxQycnvNvVo9iJJrXYTFSjMVZeVRc+GjhvX9FiL+/mNTumvukrUpDplXdClqviqMw/NhTKf8AZiq4PTnaunmJWOx3SS3OrmUz1gau24cOFUTiTjOdKWdYeuIzvSQoAIo4D51Rp0lUpGPJzcBkaXjMVkSG9MWuaulFQgRe5czOWRiuqNO8JHpD36VzvllVczXrztXQ134KWDZsD15iXgTMCLBjQmRIURjmvY9Ec1zXJgqKi6UXnQnbDlBW2epR8S50bl/qR/Zd0L5ztUtXJA7FNr9pCokElL4bkZihxI9YoMB8Smri+NLtxc6W51VE0rD/AM2kazfbVdaO50jJ6d+KLtm8LV4lTgUtEE8c0ec1QACSOYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA9ynefyfv4feLc2+SnsKjKd5/J+/h94tyb5KewyTqm+FtupL+xA3nTD+J5AAy4hTHBb0IY4Lf+lP3HkBip+4rxnjwW/8ASn7jKIiaEMgH5ioAABHLKc1AktrQd3EIGE88pzUCS2tB3cQgYbj1PN4Xevf+xZrVuX/JSwzJ15MpHrUz31O59BwzJ15MpHrUz31O5mS5Q7+XH2mTnIGr3TNrKZI5ZTmoMltaDu4hI0jllOagyW1oO7iH3k3v9bvXs5z9ot1RayEDAAeki3gA7LcfYmmWrtg6FUU4crKSyzDoXNFcjka1rv8Atz4r0nSuNfDQUU9TLssjbiubpOOWRsUbnu0IfXuhuZm7WRmVKqMiQKQxcWpna+aVF8li6UYmGCu/BCetPp8lTpKBKSkCHBl4TEbDhsRGta1NCIiH7QIMKBChw4UNrIbGo1rGoiI1EzIiImhE6D98ynny+5QVt4qlklcqRov9ONNDU/dfOVWqq5Kh2K7XgQ8gAQZ1TBwu9m+OnWQl4kjIuhzFYe382HpZARdDouHPhobznwr4L7oFnfDUiiPhxaoqKkWNmcyVxzaNCxP2LmTnIMTMzMTUxFjx4r4kaI9z4j3uVznucuKqqrnVVVccTRMlMjH1isq61itp9LGcL/OvEhL0NuV+EkqbH2W8f+j2KpVKjVZ+Ynp6ZiR5mM/hRIr1xcq/7IiJgiJmRNB6cOJEhxGRIb3NexyOa5qqitVFxRUVM6Ki58TwBsjIo2RtjaxGsambm/ZzSfRrUbgiE2bnb821VYFEtFGYyd/NbLTjsGtjroRkTmR/Quh3tJSlQJLS56/ZZf8AJqHaSYVYeKQ5aeeuKs5kZGVdKcyO5ucyfKzIrrfXKy3s7zbSQt4PO3oISut2mSJus3oJmA8Wua5EVFRUVMx5GXkIeDmo5FRUxRUwUhpfHcV+SpNVyzkBVg/nRJmRYmdnOr4KJzc6t5uYmX+JlUxJSz3istVW2eB2x9pvA9OJTnp6iSB6Oav+yoEEoMoywdGo8xIVunwWwFnY74czCbmY6JhwkeiJmRVwXhdK5yL56Es91hulviqo2uaj/srpRU2FQtdPM2aJr04QACUOYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA9iVipBmYEVUVUZEa5U51RFRf9iw+Ff5dWsJiurrmLgmLVlI6qi9C4MVMxXQCu37JmhvSwLPJK3rWdm5iom2wxxxReI6lTRxVGbnOdscRY94/LqPWFeyTP2x4/LqPWFeyTP2yuEFe7m9n+9VXvb/E6vaim8d/yLHvH5dR6wr2SZ+2PH5dR6wr2SZ+2Vwgdzez/eqr3t/iO1FN47/kWPePy6j1hXskz9sePy6j1hXskz9srhA7m9n+9VXvb/EdqKbx3/Ise8fl1HrCvZJn7Y8fd1HrCvZJn7ZXCB3N7P8Aeqr3t/iO1FN47vkSvv0vRsXaey0nT6PUHTMZs+yM/wDoYkNrWsY5FxWI1udVdmRCKABbrNZ6a00fY8Dnubnq7v8ABV2fQiHep4GwR5jdBYXk7cmUj1qZ76ncytCyV71tbK0tKdTZmB+TJFc9rYkJHq1XaURdOCrnw6TaOMXeX/eJLs6fMzG7ZC3qqudXPGsGZJK5zcXLjgq48RDT2yofM9zc3BXFg5HPKb1BktrQd3EOCcYu8v8AvEl2dPmadbG9S2FrpGDJVSZgul4cZIqMhw0YivRFaiqqZ8yKubQfVmyHvVJdaSeVYMyOVHOwcuOx+B+01tqI52Odm4I45yADYSfBJnJe1vrGzF3jSMxIHJ1r9Ho9rqg6oz0CVZGp6sY+M9IbFckRq8HhOwRFVM6JzlbyujfJk9XNa3Fetp3rfSh1K5FdTSInik/gal/P6w/rNSe2QvqPF1v7DI1VW09JRETFV/LIX1Hn7sSp5CT4VKr1qTxHG3L7SJt8V+rJVJmh2bmMZjFWTM8xfzYfMrISp+lzK7m5s5rd8F+sSoeGo1m5lzZTBWzM63FHRscyshrpRnS7n5sxFc0zJPInHMrLizY20cLud3QTNDbtrJKmq3pPJznOcrnKqqqqqqq4qqrpVVPEA1hEREREQnAAD9AAABJO5++6YoT4NHr0d0WmLg2DMOxc+W5kRedYf+aE4paZl5mXhR4EVkSFEY1zHsVHNc1c6KipmVFKijul018tQshGh0+fV8xRnvzt0vllVc7ofSmK4ub+JmeVmRbajPrKCPCXbSR8DvOnEpD11uR+dJEmz9pvH/ssLBpMveJYSYgsistPSuC5EVMZqG1c/Siqiov7FPZ/n7Yf1mpPbIX1GTrSVaKqLBJ8KkF1qTk3e44TlS6tULaDt2pCMl7lI2ps5VaJRJaQq0pNRmzj4jmwIrYvBYjFTFeCqomKrmx0kQjc8hI5GZPwo9jkXPfpTD7RZba1UpWoreMAAuJIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA9mUl1mZuXgI5GrEitYi4Y4K5UTH/ADPWPpUb+2Kd1uD30OOdzmwyqniKfL1wapNdmS/YjgJwqrWVXBMcIsHT0p/RKefFesL6UrPxoP2iSTfJT2GfwPOa5TX7Ff7jP8RVFrqrHwriNnFesL6TrPxoP2hxXrC+k6z8aD9okmD8+kt+8oz/ABH52dVcq4jZxXrC+k6z8aD9ocV6wvpOs/Gg/aJJgfSW/eUZ/iHZ1VyriNnFesL6TrPxoP2hxXrC+k6z8aD9okmB9Jb95Rn+IdnVXKuI2cV6wvpOs/Gg/aHFesL6TrPxoP2iSYH0lv3lGf4h2dVcq4jZxXrC+k6z8aD9ocV6wvpOs/Gg/aJJgfSW/eUZ/iHZ1XyriNnFesJ6UrXxoP2jkl8NzVn7F2dlalTp6eiufOsgPZMOY5MHtc5FTgNZgqcEnbgR0ym9QZLa8HdxCYyfyhvUt6oY5K6Z7HzNa5rlxxRTsUlXUOqImulcqK4gYADeSzAAAAAH5mt4kGCAAH6AAAAAAAAAAAAAAD8zW8SDBAAD9RMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD6VG/tindbg99D5p5w3vhxGPY5WuaqOaqLgqKi4oqL7TjlZnRvb4yHy5MWqhb23yU9h5FcLb+71GtRv8utXBETFZWB+9fzDy8ft6np1vZYH0GKL1Or7j4Wl+J38SuraanHS35ljgK4/H7ep6db2WB9A8ft6np1vZYH0DudX3laX43fxHamp42fPoLHAVx+P29T063ssD6B4/b1PTreywPoHc6vvK0vxu/iO1NTxs+fQWOArj8ft6np1vZYH0Dx+3qenW9lgfQO51feVpfjd/EdqanjZ8+gscBXH4/b1PTreywPoHj9vU9Ot7LA+gdzq+8rS/G7+I7U1PG359BY2DlFzVpazaOw8rUapMJGmnx47XPRjWYox6oiYNREzIdX0lJrKSSkqpoJFar43q12GjFNjYI6Rise5q6UMkcspzUGS2tB3cQkaRyynNQZLa0HdxCTyb3+t3r2c5z0W6otZCBgAPSRbjabL2KtPamPMQaNTnTT4LGui4PYxGI5cExdEVqYrhmTSpuviGvX9XV7VLfcOt5Kif1m1nu5H/WITF5jLco8trrbbvU0sMVOrGZmCua5V2WovAqcZC1dxmhnVjEbgmHHxFb/AIh71/V1e1S33B4h71/V1e1S33CyEEH3Rr7yNL8Dv5HV7bVPis+fSVveIe9f1dXtUt9weIe9f1dXtUt9wshA7o195Gl+B38h22qfFZ8+kre8Q96/q6vapb7g8Q96/q6vapb7hZCB3Rr7yNL8Dv5DttU+Kz59JW94h71/V1e1S33B4h71/V1e1S33CyEDujX3kaX4HfyHbap8Vnz6St7xD3r+rq9qlvuDxD3r+rq9qlvuFkIHdGvvI0vwO/kO21T4rPn0lb3iHvX9XV7VLfcHiHvX9XV7VLfcLIQO6NfeRpfgd/IdtqnxWfPpK3vEPev6ur2qW+4PEPev6ur2qW+4WQgd0a+8jS/A7+Q7bVHis+fSVveIe9f1dXtUt9w1q0129trLykKarFIdLwHxEhtieFhxW8NUxwXwbnYKuGbpLRiPOUvyfQdpwO68kbPl5eKu50tPLFToyWVrXZrXY7PFiqnNT3OeSZjXI3BXecgMADXSeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALDMnXkyketTPfU7mcMydeTKR61M99TuZ5qyh38uPtMnOU+r3TNrKZI5ZTmoMltaDu4hI0jllOagyW1oO7iH3k3v9bvXs5z9ot1RayEDAAeki3kuclTzi1vu5H/AFiExSAVwl4NmrIztdSsR4kFk3Cl/BxEhuiJjCV2KORiKqKvDzLhgSX8f91fpuJ2SP8AQYblhabpPlDWSxUU8jHZma5rFci96iaUQrdwp531T1bG5U2ODzHZwcZ4wF1fpuJ2SP8AQOMBdX6bidkj/QVrtHevJtV+U7oOl2JU8i73KdmBxnjAXV+m4nZI/wBA4wF1fpuJ2SP9A7R3rybVflO6B2JU8i73KdmBxnjAXV+m4nZI/wBA4wF1fpuJ2SP9A7R3rybVflO6B2JU8i73KdmBxnjAXV+m4nZI/wBA4wF1fpuJ2SP9A7R3rybVflO6B2JU8i73KdmBxnjAXV+m4nZI/wBA4wF1fpuJ2SP9A7R3rybVflO6B2JU8i73KdmBxnjAXV+m4nZI/wBA4wF1fpuJ2SP9A7R3rybVflO6B2JU8i73KdmBxnjAXV+m4nZI/wBA4wF1fpuJ2SP9A7R3rybVflO6B2JU8i73KdlI9ZS/J7B2nA7rz7/GAur9NxOyR/oOL34XrWMtPZSXp1InYkxG/LYcV39C+G1rWNcmKq9G4qqqmCIS+T9mu0d7oHvoahrGzNVznRqiIicaqh2aSmnbURKsbkTO4iJ4APQBaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACwvJ25MpHrUz31O5kLror6LJ2XshCpVSZOJGhR4ruFDho9jmxF4SYLii4poVFOpcZK7npqHwP+TAb5YbzLeK+SOhmex071a5G7CoqlXqqSodUSubE7BXKd/I6ZTmoMlteDu4h7nGSu56ah8D/k47fTe9Ze19mpSnUts0sVs8yM50WHwGo1jHJgi4quKq79x95P2G8xXmhkkoZmMZM1XOc3YQ/aSlqG1EaujciI4jEADeyzgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH//Z';
+    // Basemap: CARTO Voyager의 공개 원본 스타일을 그대로 사용하되,
+    // 타일 데이터 소스만 API key가 필요 없는 OpenFreeMap(OpenMapTiles)로 교체한다.
+    // CARTO Voyager와 OpenFreeMap 모두 OpenMapTiles 계열 스키마를 사용하므로
+    // 색상·도로 위계·녹지·수면·라벨 등 원래 Voyager 카토그래피를 최대한 그대로 유지할 수 있다.
+    const EMPTY_STYLE = {
+      version: 8,
+      sources: {},
+      layers: [{
+        id: 'background',
+        type: 'background',
+        paint: { 'background-color': '#fbf8f3' }
+      }]
+    };
+
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: EMPTY_STYLE,
+      center: [127.5, 36.5],
+      zoom: 7.2,
+      minZoom: 5,
+      maxZoom: 18,
+      attributionControl: false,
+      renderWorldCopies: false,
+      dragRotate: false,
+      pitchWithRotate: false,
+      fadeDuration: 0
+    });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
+    // MapLibre 기본 AttributionControl은 환경에 따라 처음 펼쳐져 보일 수 있어 사용하지 않는다.
+    // 대신 처음에는 반드시 ⓘ 버튼만 보이고, 사용자가 클릭할 때만 출처가 열리는 컨트롤을 사용한다.
+    class CompactInfoControl {
+      onAdd(mapInstance) {
+        this._map = mapInstance;
+        this._container = document.createElement('div');
+        this._container.className = 'maplibregl-ctrl custom-map-attrib';
+
+        this._button = document.createElement('button');
+        this._button.type = 'button';
+        this._button.className = 'custom-map-attrib-toggle';
+        this._button.textContent = '';
+        this._button.setAttribute('aria-label', '지도 정보');
+        this._button.setAttribute('aria-expanded', 'false');
+
+        this._panel = document.createElement('div');
+        this._panel.className = 'custom-map-attrib-panel';
+        this._panel.hidden = true;
+        this._panel.innerHTML = `
+          <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> ·
+          <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a> ·
+          <a href="https://github.com/CartoDB/basemap-styles" target="_blank" rel="noopener">CARTO Voyager style</a> ·
+          <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a>`;
+
+        this._toggle = (event) => {
+          event.stopPropagation();
+          const willOpen = this._panel.hidden;
+          this._panel.hidden = !willOpen;
+          this._button.setAttribute('aria-expanded', String(willOpen));
+        };
+        this._close = (event) => {
+          if (!this._container.contains(event.target)) {
+            this._panel.hidden = true;
+            this._button.setAttribute('aria-expanded', 'false');
+          }
+        };
+
+        this._button.addEventListener('click', this._toggle);
+        document.addEventListener('click', this._close);
+        this._container.appendChild(this._panel);
+        this._container.appendChild(this._button);
+        return this._container;
+      }
+
+      onRemove() {
+        if (this._button) this._button.removeEventListener('click', this._toggle);
+        document.removeEventListener('click', this._close);
+        if (this._container?.parentNode) this._container.parentNode.removeChild(this._container);
+        this._map = undefined;
+      }
+    }
+    map.addControl(new CompactInfoControl(), 'bottom-right');
+
+    const VOYAGER_STYLE_URLS = [
+      'https://cdn.jsdelivr.net/gh/CartoDB/basemap-styles@master/mapboxgl/voyager.json',
+      'https://raw.githubusercontent.com/CartoDB/basemap-styles/master/mapboxgl/voyager.json'
+    ];
+
+    async function fetchVoyagerStyle() {
+      let lastError = null;
+      for (const url of VOYAGER_STYLE_URLS) {
+        try {
+          const response = await fetch(url, { mode: 'cors', cache: 'force-cache' });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const style = await response.json();
+
+          // CARTO의 유료/키 기반 타일 소스만 OpenFreeMap으로 교체.
+          // Voyager의 레이어 정의, 색, 선 굵기, 라벨 위계는 원본 그대로 둔다.
+          style.sources = style.sources || {};
+          style.sources.carto = {
+            type: 'vector',
+            url: 'https://tiles.openfreemap.org/planet'
+          };
+
+          // Voyager의 기존 색감은 그대로 유지하고 수면(바다/호수)만 아주 살짝 더 푸르게 조정.
+          // 원본: water #b0d0d6 / water_shadow rgba(203,225,228,1)
+          const waterLayer = style.layers?.find(layer => layer.id === 'water');
+          if (waterLayer?.paint) waterLayer.paint['fill-color'] = '#b0d0d6';
+
+          const waterShadowLayer = style.layers?.find(layer => layer.id === 'water_shadow');
+          if (waterShadowLayer?.paint) waterShadowLayer.paint['fill-color'] = 'rgba(203, 225, 228, 1)';
+
+          // 원본 CARTO의 sprite / glyph는 지도 타일이 아니므로 그대로 사용한다.
+          // 이 덕분에 Voyager 고유의 라벨 서체·POI 심볼 표현도 최대한 보존된다.
+          return style;
+        } catch (error) {
+          lastError = error;
+          console.warn('Voyager 스타일 로드 실패:', url, error);
+        }
+      }
+      throw lastError || new Error('Voyager 스타일을 불러오지 못했습니다.');
+    }
+
+    let basemapReady = false;
+    async function applyBasemap() {
+      try {
+        const voyagerStyle = await fetchVoyagerStyle();
+        map.setStyle(voyagerStyle, { diff: false });
+      } catch (error) {
+        console.error('Voyager 스타일 적용 실패. OpenFreeMap Liberty로 대체합니다.', error);
+        map.setStyle('https://tiles.openfreemap.org/styles/liberty', { diff: false });
+      }
+    }
+
+    const statusEl = document.getElementById('status');
+    const listEl = document.getElementById('branchList');
+    const markers = [];
+    let currentFilter = 'all';
+
+    // 메가박스 마커 크기: 기존과 동일하게 줌에 따라 확대
+    function getMegaboxIconSize(zoomLevel = 7) {
+      const baseSize = 32;
+      const zoomFactor = Math.pow(1.08, zoomLevel - 7);
+      return Math.max(30, Math.min(55, baseSize * zoomFactor));
+    }
+
+    function createMegaboxMarker(lat, lon, popupContent, opacity = 1.0) {
+      const iconSize = getMegaboxIconSize(map.getZoom());
+
+      // MapLibre가 위치 transform을 적용하는 바깥 요소와
+      // hover/시각 효과를 적용하는 실제 이미지를 분리한다.
+      const el = document.createElement('div');
+      el.className = 'megabox-marker';
+      el.style.width = `${iconSize}px`;
+      el.style.height = `${iconSize}px`;
+
+      const img = document.createElement('img');
+      img.src = MEGABOX_ICON_DATA;
+      img.className = 'megabox-logo-icon';
+      img.alt = '메가박스';
+      img.style.opacity = String(opacity);
+      el.appendChild(img);
+
+      const popup = new maplibregl.Popup({ offset: 20, closeButton: true, maxWidth: '320px' })
+        .setHTML(popupContent);
+      const marker = new maplibregl.Marker({
+        element: el,
+        anchor: 'center',
+        subpixelPositioning: true
+      })
+        .setLngLat([lon, lat])
+        .setPopup(popup)
+        .addTo(map);
+      marker.__opacity = opacity;
+      return marker;
+    }
+
+    function clearMarkers() {
+      markers.forEach(marker => marker.remove());
+      markers.length = 0;
+    }
+
+    function resetNationalView() {
+      map.easeTo({ center: [127.5, 36.5], zoom: 7.2, duration: 500 });
+    }
+
+    // 첫 페이지와 '전체' 필터 모두 동일한 전국 뷰(줌 7)를 사용한다.
+
+    function fitToBounds(bounds) {
+      if (!bounds || bounds.isEmpty()) return;
+      map.fitBounds(bounds, { padding: 90, maxZoom: 12.5, duration: 600 });
+    }
+
+    // 특별관 개수에 따른 투명도 계산 (3단계)
+    function getOpacityBySpecialHallCount(count) {
+      if (count === 0) return 0.25; // 특별관이 없는 지점은 25% 투명도
+      if (count === 1) return 0.5; // 1개 특별관은 50% 투명도
+      return 1.0; // 2개 이상은 100% 불투명
+    }
+
+    function appendListItem(text, ok) {
+      const li = document.createElement('li');
+      li.textContent = text;
+      if(ok === false) li.style.color = '#b00020';
+      listEl.appendChild(li);
+    }
+
+    // Update all marker icons continuously while zooming.
+    // 기존처럼 zoomend에서 한 번에 크기를 바꾸면 마지막에 아이콘이 팍 변하는 느낌이 생긴다.
+    // MapLibre의 연속적인 fractional zoom 값을 그대로 사용해 매 프레임 자연스럽게 크기를 보간한다.
+    function updateMarkerIcons() {
+      const iconSize = getMegaboxIconSize(map.getZoom());
+      markers.forEach(marker => {
+        const el = marker.getElement();
+        el.style.width = `${iconSize}px`;
+        el.style.height = `${iconSize}px`;
+        const img = el.querySelector('.megabox-logo-icon');
+        if (img) img.style.opacity = String(marker.__opacity ?? 1);
+      });
+    }
+
+    let markerResizeFrame = null;
+    function scheduleMarkerIconUpdate() {
+      if (markerResizeFrame !== null) return;
+      markerResizeFrame = requestAnimationFrame(() => {
+        markerResizeFrame = null;
+        updateMarkerIcons();
+      });
+    }
+
+    // Get region for a branch
+    function getBranchRegion(branchName) {
+      // 부산/대구/경상 지점 (먼저 체크 - 구미가 구의에 포함되지 않도록)
+      if (branchName.includes('부산') || branchName.includes('해운대') || branchName.includes('센텀') ||
+          branchName.includes('사상') || branchName.includes('서면') || branchName.includes('대구') ||
+          branchName.includes('이시아') || branchName.includes('포항') || branchName.includes('진주') ||
+          branchName.includes('창원') || branchName.includes('김해') || branchName.includes('마산') ||
+          branchName.includes('양산') || branchName.includes('경산') || branchName.includes('구미') ||
+          branchName.includes('김천') || branchName.includes('안동') || branchName.includes('경주')) {
+        return 'busan';
+      }
+      // 강원 지점
+      else if (branchName.includes('원주') || branchName.includes('춘천') || branchName.includes('속초')) {
+        return 'gangwon';
+      }
+      // 광주/전라 지점
+      else if (branchName.includes('광주') || branchName.includes('전주') || branchName.includes('군산') ||
+               branchName.includes('익산') || branchName.includes('목포') || branchName.includes('여수') ||
+               branchName.includes('순천')) {
+        return 'gwangju';
+      }
+      // 서울 지점
+      else if (branchName.includes('서울') || branchName.includes('강남') || branchName.includes('강동') || 
+               branchName.includes('구의') || branchName.includes('군자') || branchName.includes('목동') ||
+               branchName.includes('동대문') || branchName.includes('마곡') || branchName.includes('상봉') ||
+               branchName.includes('상암') || branchName.includes('성수') || branchName.includes('센트럴') ||
+               branchName.includes('송파') || branchName.includes('신촌') || branchName.includes('이수') ||
+               branchName.includes('창동') || branchName.includes('코엑스') || branchName.includes('픽쳐하우스') ||
+               branchName.includes('홍대') || branchName.includes('화곡') || branchName.includes('ARTNINE')) {
+        return 'seoul';
+      }
+      // 경기 지점
+      else if (branchName.includes('고양') || branchName.includes('광명') || branchName.includes('금정') ||
+               branchName.includes('김포') || branchName.includes('남양주') || branchName.includes('동탄') ||
+               branchName.includes('미사') || branchName.includes('백석') || branchName.includes('별내') ||
+               branchName.includes('부천') || branchName.includes('분당') || branchName.includes('성남') ||
+               branchName.includes('수원') || branchName.includes('시흥') || branchName.includes('안산') ||
+               branchName.includes('안성') || branchName.includes('용인') || branchName.includes('의정부') ||
+               branchName.includes('킨텍스') || branchName.includes('파주') || branchName.includes('평택') ||
+               branchName.includes('하남')) {
+        return 'gyeonggi';
+      }
+      // 인천 지점
+      else if (branchName.includes('검단') || branchName.includes('송도') || branchName.includes('영종') ||
+               branchName.includes('인천') || branchName.includes('청라')) {
+        return 'incheon';
+      }
+      // 대전/충청 지점
+      else if (branchName.includes('대전') || branchName.includes('둔산') || branchName.includes('유성') ||
+               branchName.includes('세종') || branchName.includes('청주') || branchName.includes('충주') ||
+               branchName.includes('공주') || branchName.includes('논산') || branchName.includes('천안') ||
+               branchName.includes('아산') || branchName.includes('서산') || branchName.includes('홍성') ||
+               branchName.includes('제천') || branchName.includes('보은')) {
+        return 'daejeon';
+      }
+      // 제주 지점
+      else if (branchName.includes('제주') || branchName.includes('서귀포')) {
+        return 'jeju';
+      }
+      return 'all';
+    }
+
+
+    // Filter markers by region
+    function filterMarkers(region) {
+      currentFilter = region;
+      
+      // Update button states
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      document.querySelector(`[data-region="${region}"]`).classList.add('active');
+      
+      // Clear existing markers
+      clearMarkers();
+      listEl.innerHTML = '';
+      
+      // Add filtered markers
+      const currentZoom = map.getZoom();
+            let addedCount = 0;
+      const newBounds = new maplibregl.LngLatBounds();
+      
+      branches.forEach(branch => {
+        if (branch.lat && branch.lng) {
+          const branchRegion = getBranchRegion(branch.name);
+          if (region === 'all' || branchRegion === region) {
+            const lat = parseFloat(branch.lat);
+            const lon = parseFloat(branch.lng);
+            const address = branch.address || '주소 정보 없음';
+            
+            // Create booking popup content with special info
+            const bookingUrl = branchBookingUrls[branch.name] || 'https://www.megabox.co.kr/';
+            const specialInfo = specialHallsData[branch.name] || { 
+              specialTheaters: [], 
+              region: "정보 없음"
+            };
+            
+            const specialTheatersHtml = specialInfo.specialTheaters.length > 0 
+              ? `<div style="margin: 8px 0; font-size: 12px;">
+                   <strong style="color: #6D28D9;">특수 상영관:</strong> ${specialInfo.specialTheaters.join(', ')}
+                 </div>`
+              : '';
+            
+            const popupContent = `
+              <h3>${branch.name}</h3>
+              <p style="margin: 0 0 12px; color: #666; font-size: 12px;">${address}</p>
+              ${specialTheatersHtml}
+              <button class="book-btn" onclick="window.open('${bookingUrl}', '_blank')">
+                예매하러 가기
+              </button>
+            `;
+            
+            const m = createMegaboxMarker(lat, lon, popupContent);
+            markers.push(m);
+            newBounds.extend([lon, lat]);
+            appendListItem(`✔ ${branch.name}`, true);
+            addedCount++;
+          }
+        }
+      });
+      
+      // Fit map to show filtered markers
+      if (markers.length > 0) {
+        if (region === 'all') {
+          resetNationalView();
+        } else {
+          fitToBounds(newBounds);
+        }
+        statusEl.textContent = `완료 (${addedCount}개 지점 표시)`;
+      } else {
+        statusEl.textContent = '오류 (표시된 지점 없음)';
+      }
+    }
+
+    // 특별관 전체 보기 (모든 특별관이 있는 지점만 표시)
+    function showAllSpecialHalls() {
+      // Clear existing markers
+      clearMarkers();
+      listEl.innerHTML = '';
+      
+      let addedCount = 0;
+      const newBounds = new maplibregl.LngLatBounds();
+      
+      branches.forEach(branch => {
+        if (branch.lat && branch.lng) {
+          const specialInfo = specialHallsData[branch.name];
+          
+          if (specialInfo && specialInfo.specialTheaters && specialInfo.specialTheaters.length > 0) {
+            const lat = parseFloat(branch.lat);
+            const lon = parseFloat(branch.lng);
+            
+            // Create popup with special info
+            const bookingUrl = branchBookingUrls[branch.name] || 'https://www.megabox.co.kr/';
+            const address = branch.address || '주소 정보 없음';
+            const specialTheatersHtml = specialInfo.specialTheaters.length > 0 
+              ? `<div style="margin: 8px 0; font-size: 12px;">
+                   <strong style="color: #6D28D9;">특별관:</strong> ${specialInfo.specialTheaters.join(', ')}
+                 </div>`
+              : '';
+            
+            const popupContent = `
+              <h3>${branch.name}</h3>
+              <p style="margin: 0 0 12px; color: #666; font-size: 12px;">${address}</p>
+              ${specialTheatersHtml}
+              <button class="book-btn" onclick="window.open('${bookingUrl}', '_blank')">
+                예매하러 가기
+              </button>
+            `;
+            
+            const m = createMegaboxMarker(lat, lon, popupContent);
+            markers.push(m);
+            newBounds.extend([lon, lat]);
+            appendListItem(`✔ ${branch.name} (특별관 ${specialInfo.specialTheaters.length}개)`, true);
+            addedCount++;
+          }
+        }
+      });
+      
+      if (markers.length > 0) {
+        // 전체 선택 시 초기 줌 레벨로 설정 (지역별 필터의 '전체'와 동일)
+        resetNationalView();
+        statusEl.textContent = `특별관 전체 (${addedCount}개 지점)`;
+      } else {
+        statusEl.textContent = '특별관이 있는 지점이 없습니다.';
+      }
+    }
+
+    // 특별관 비교 보기 (투명도로 밀집도 시각화)
+    function showSpecialHallComparison() {
+      // Clear existing markers
+      clearMarkers();
+      listEl.innerHTML = '';
+      
+      let addedCount = 0;
+      const newBounds = new maplibregl.LngLatBounds();
+      
+      // 특별관 개수별로 정렬 (높은 순서대로) - 진한 아이콘이 위에 오도록
+      const branchesWithSpecialHalls = branches.map(branch => {
+        const specialInfo = specialHallsData[branch.name];
+        const specialHallCount = specialInfo && specialInfo.specialTheaters ? specialInfo.specialTheaters.length : 0;
+        return { ...branch, specialHallCount };
+      }).sort((a, b) => b.specialHallCount - a.specialHallCount);
+      
+      // 투명한 아이콘부터 먼저 추가 (아래 레이어)
+      const transparentBranches = branchesWithSpecialHalls.filter(branch => branch.specialHallCount <= 1);
+      const opaqueBranches = branchesWithSpecialHalls.filter(branch => branch.specialHallCount >= 2);
+      
+      // 투명한 아이콘들 먼저 추가
+      transparentBranches.forEach(branch => {
+        if (branch.lat && branch.lng) {
+          const lat = parseFloat(branch.lat);
+          const lon = parseFloat(branch.lng);
+          
+          const specialInfo = specialHallsData[branch.name];
+          const specialHallCount = specialInfo && specialInfo.specialTheaters ? specialInfo.specialTheaters.length : 0;
+          const opacity = getOpacityBySpecialHallCount(specialHallCount);
+          
+          const bookingUrl = branchBookingUrls[branch.name] || 'https://www.megabox.co.kr/';
+          const address = branch.address || '주소 정보 없음';
+          const specialTheatersHtml = specialInfo && specialInfo.specialTheaters && specialInfo.specialTheaters.length > 0 
+            ? `<div style="margin: 8px 0; font-size: 12px;">
+                 <strong style="color: #6D28D9;">특별관:</strong> ${specialInfo.specialTheaters.join(', ')}
+               </div>`
+            : '<div style="margin: 8px 0; font-size: 12px; color: #999;">특별관 없음</div>';
+          
+          const popupContent = `
+            <h3>${branch.name}</h3>
+            <p style="margin: 0 0 12px; color: #666; font-size: 12px;">${address}</p>
+            ${specialTheatersHtml}
+            <button class="book-btn" onclick="window.open('${bookingUrl}', '_blank')">
+              예매하러 가기
+            </button>
+          `;
+          
+          const m = createMegaboxMarker(lat, lon, popupContent, opacity);
+          markers.push(m);
+          newBounds.extend([lon, lat]);
+          
+          appendListItem(`✔ ${branch.name} (특별관 ${specialHallCount}개)`, true);
+          addedCount++;
+        }
+      });
+      
+      // 진한 아이콘들 나중에 추가 (위 레이어)
+      opaqueBranches.forEach(branch => {
+        if (branch.lat && branch.lng) {
+          const lat = parseFloat(branch.lat);
+          const lon = parseFloat(branch.lng);
+          
+          const specialInfo = specialHallsData[branch.name];
+          const specialHallCount = specialInfo && specialInfo.specialTheaters ? specialInfo.specialTheaters.length : 0;
+          const opacity = getOpacityBySpecialHallCount(specialHallCount);
+          
+          const bookingUrl = branchBookingUrls[branch.name] || 'https://www.megabox.co.kr/';
+          const address = branch.address || '주소 정보 없음';
+          const specialTheatersHtml = specialInfo && specialInfo.specialTheaters && specialInfo.specialTheaters.length > 0 
+            ? `<div style="margin: 8px 0; font-size: 12px;">
+                 <strong style="color: #6D28D9;">특별관:</strong> ${specialInfo.specialTheaters.join(', ')}
+               </div>`
+            : '<div style="margin: 8px 0; font-size: 12px; color: #999;">특별관 없음</div>';
+          
+          const popupContent = `
+            <h3>${branch.name}</h3>
+            <p style="margin: 0 0 12px; color: #666; font-size: 12px;">${address}</p>
+            ${specialTheatersHtml}
+            <button class="book-btn" onclick="window.open('${bookingUrl}', '_blank')">
+              예매하러 가기
+            </button>
+          `;
+          
+          const m = createMegaboxMarker(lat, lon, popupContent, opacity);
+          markers.push(m);
+          newBounds.extend([lon, lat]);
+          
+          appendListItem(`✔ ${branch.name} (특별관 ${specialHallCount}개)`, true);
+          addedCount++;
+        }
+      });
+      
+      if (markers.length > 0) {
+        // 전체 선택 시 초기 줌 레벨로 설정 (지역별 필터의 '전체'와 동일)
+        resetNationalView();
+        statusEl.textContent = `상영관 비교 (${addedCount}개 지점)`;
+      } else {
+        statusEl.textContent = '지점이 없습니다.';
+      }
+    }
+
+    // Add all markers instantly
+    function addAllMarkers() {
+      filterMarkers('all');
+    }
+
+    // Resize icons throughout the zoom animation instead of snapping at the end.
+    map.on('zoom', scheduleMarkerIconUpdate);
+    map.on('zoomend', updateMarkerIcons);
+
+    // 거리 계산 함수
+    function calculateDistance(lat1, lng1, lat2, lng2) {
+      const R = 6371; // 지구 반지름 (km)
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLng/2) * Math.sin(dLng/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    // 가장 가까운 지점 찾기
+    function findNearestBranch(userLat, userLng) {
+      let nearest = null;
+      let minDistance = Infinity;
+      
+      branches.forEach(branch => {
+        if (branch.lat && branch.lng) {
+          const distance = calculateDistance(userLat, userLng, branch.lat, branch.lng);
+          if (distance < minDistance) {
+            minDistance = distance;
+            nearest = branch;
+          }
+        }
+      });
+      
+      return { branch: nearest, distance: minDistance };
+    }
+
+    // 내 위치에서 가까운 지점 찾기
+    function findNearestBranchFromUserLocation() {
+      if (!navigator.geolocation) {
+        alert('위치 서비스를 지원하지 않는 브라우저입니다.');
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        function(position) {
+          const userLat = position.coords.latitude;
+          const userLng = position.coords.longitude;
+          
+          const nearest = findNearestBranch(userLat, userLng);
+          
+          if (nearest.branch) {
+            // 지도를 가장 가까운 지점으로 이동
+            map.easeTo({ center: [nearest.branch.lng, nearest.branch.lat], zoom: 15, duration: 700 });
+            
+            // 결과 표시
+            alert(`${nearest.branch.name}이 가장 가깝습니다.\n거리: ${nearest.distance.toFixed(1)}km`);
+          }
+        },
+        function(error) {
+          alert('위치 정보를 가져올 수 없습니다: ' + error.message);
+        }
+      );
+    }
+
+    // 특별관 필터
+    function filterByTheater(theaterType) {
+      console.log('특별관 필터링 시작:', theaterType);
+      console.log('현재 데이터:', specialHallsData);
+      
+      // Clear existing markers
+      clearMarkers();
+      listEl.innerHTML = '';
+      
+      let addedCount = 0;
+      const newBounds = new maplibregl.LngLatBounds();
+      
+      // 특별관 타입 매핑
+      const theaterTypeMap = {
+        'dolbycinema': 'Dolby Cinema',
+        'dolbyvision': 'Dolby Vision + Atmos',
+        'dolbyatmos': 'Dolby Atmos',
+        'mx4d': 'MX4D',
+        'led': 'LED',
+        'boutique': 'BOUTIQUE by MEGA',
+        'boutiqueprivate': 'BOUTIQUE PRIVATE by MEGA',
+        'balcony': 'BALCONY',
+        'comfort': 'COMFORT by MEGA'
+      };
+      
+      const targetTheater = theaterTypeMap[theaterType];
+      
+      branches.forEach(branch => {
+        if (branch.lat && branch.lng) {
+          const specialInfo = specialHallsData[branch.name];
+          console.log(`지점: ${branch.name}, 특별관:`, specialInfo);
+          
+          if (specialInfo && specialInfo.specialTheaters && specialInfo.specialTheaters.length > 0) {
+            const hasTheater = specialInfo.specialTheaters.includes(targetTheater);
+            console.log(`${branch.name}에서 ${targetTheater} 찾기:`, hasTheater);
+            
+            if (hasTheater) {
+              const lat = parseFloat(branch.lat);
+              const lon = parseFloat(branch.lng);
+                
+              // Create popup with special info
+              const bookingUrl = branchBookingUrls[branch.name] || 'https://www.megabox.co.kr/';
+              const address = branch.address || '주소 정보 없음';
+              const specialTheatersHtml = specialInfo.specialTheaters.length > 0 
+                ? `<div style="margin: 8px 0; font-size: 12px;">
+                     <strong style="color: #6D28D9;">특별관:</strong> ${specialInfo.specialTheaters.join(', ')}
+                   </div>`
+                : '';
+              
+              const popupContent = `
+                <h3>${branch.name}</h3>
+                <p style="margin: 0 0 12px; color: #666; font-size: 12px;">${address}</p>
+                ${specialTheatersHtml}
+                <button class="book-btn" onclick="window.open('${bookingUrl}', '_blank')">
+                  예매하러 가기
+                </button>
+              `;
+              
+              const m = createMegaboxMarker(lat, lon, popupContent);
+              markers.push(m);
+              newBounds.extend([lon, lat]);
+              appendListItem(`✔ ${branch.name}`, true);
+              addedCount++;
+            }
+          }
+        }
+      });
+      
+      if (markers.length > 0) {
+        // COMFORT by MEGA 필터는 특별관 전체와 같은 줌 레벨 사용
+        if (theaterType === 'comfort') {
+          resetNationalView();
+        } else {
+          fitToBounds(newBounds);
+        }
+        statusEl.textContent = `${targetTheater} (${addedCount}개 지점)`;
+      } else {
+        statusEl.textContent = `${targetTheater}이 있는 지점이 없습니다.`;
+      }
+    }
+
+    // Add filter button event listeners
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const region = this.getAttribute('data-region');
+        const theater = this.getAttribute('data-theater');
+        const special = this.getAttribute('data-special');
+        
+        if (region) {
+          // 지역 필터 활성화 상태 관리
+          document.querySelectorAll('[data-region]').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          filterMarkers(region);
+        } else if (theater) {
+          // 특별관 필터 활성화 상태 관리
+          document.querySelectorAll('[data-theater]').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          filterByTheater(theater);
+        } else if (special) {
+          // 특별관 분석 필터 활성화 상태 관리
+          document.querySelectorAll('[data-special]').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          
+          if (special === 'all') {
+            showAllSpecialHalls();
+          } else if (special === 'compare') {
+            showSpecialHallComparison();
+          }
+        }
+      });
+    });
+
+    // Voyager(또는 fallback) 스타일이 실제로 준비된 뒤 마커를 한 번만 생성한다.
+    map.on('style.load', () => {
+      if (basemapReady) return;
+      basemapReady = true;
+      addAllMarkers();
+      statusEl.textContent = `완료 (${markers.length}개 지점 표시)`;
+    });
+
+    map.on('error', (event) => {
+      console.error('지도 로딩 오류:', event && event.error ? event.error : event);
+      if (!basemapReady && !markers.length) statusEl.textContent = '지도 로딩 중...';
+    });
+
+    // 빈 배경으로 즉시 MapLibre를 띄운 뒤, 정확한 Voyager 스타일을 비동기로 적용한다.
+    applyBasemap();
+    
+    // Custom tooltip for info icon
+    const tooltipIcon = document.getElementById('tooltip-icon');
+    const tooltipContent = document.createElement('div');
+    tooltipContent.className = 'tooltip-content';
+    tooltipContent.innerHTML = `
+      <div class="tooltip-title">상영관 비교</div>
+      보유한 특별관 수에 따라<br>
+      각 지점을 불투명도로 비교 표시
+    `;
+    tooltipIcon.appendChild(tooltipContent);
+    
+    tooltipIcon.addEventListener('mouseenter', () => {
+      tooltipContent.classList.add('show');
+    });
+    
+    tooltipIcon.addEventListener('mouseleave', () => {
+      tooltipContent.classList.remove('show');
+    });
+  </script>
+</body>
+</html>
